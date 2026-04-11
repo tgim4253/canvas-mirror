@@ -182,6 +182,11 @@
       color: #111111;
     }
 
+    .control-button:disabled {
+      opacity: 0.42;
+      cursor: default;
+    }
+
     .bottom-toolbar .control-button.is-pressed {
       background: rgba(255, 255, 255, 0.18);
       color: #ffffff;
@@ -307,6 +312,19 @@
             <path d="M19 5v5h-5"></path>
           </svg>
         </button>
+        <button id="resetRotation" class="control-button" type="button" aria-label="Reset rotation" title="Reset rotation" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M10.1 2.18c1.255-.245 2.545-.245 3.8 0"></path>
+            <path d="M17.6 3.71c1.062.718 1.975 1.635 2.69 2.7"></path>
+            <path d="M21.82 10.1c.244 1.255.244 2.545 0 3.8"></path>
+            <path d="M20.29 17.6c-.718 1.062-1.635 1.976-2.7 2.69"></path>
+            <path d="M13.9 21.82c-1.255.244-2.545.244-3.8 0"></path>
+            <path d="M6.4 20.29c-1.062-.718-1.976-1.635-2.69-2.7"></path>
+            <path d="M2.18 13.9a9.69 9.69 0 0 1 0-3.8"></path>
+            <path d="M3.71 6.4c.718-1.062 1.635-1.976 2.7-2.69"></path>
+            <path d="M13 12a1 1 0 1 1-2 0a1 1 0 0 1 2 0Z"></path>
+          </svg>
+        </button>
         <button id="toggleFit" class="control-button" type="button" aria-label="Fit image" title="Fit image">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M8 4H4v4"></path>
@@ -339,6 +357,7 @@
     const fullscreenExitIcon = document.getElementById("fullscreenExitIcon");
     const mirrorToggleButton = document.getElementById("mirrorToggle");
     const rotateImageButton = document.getElementById("rotateImage");
+    const resetRotationButton = document.getElementById("resetRotation");
     const toggleFitButton = document.getElementById("toggleFit");
     const toggleGrayscaleButton = document.getElementById("toggleGrayscale");
     const roomId = new URLSearchParams(window.location.search).get("room")?.trim() || "";
@@ -457,15 +476,15 @@
       );
       const renderedWidth = imageSize.width * baseContainScale;
       const renderedHeight = imageSize.height * baseContainScale;
+      const radians = normalizedRotation() * (Math.PI / 180);
+      const rotatedWidth =
+        Math.abs(renderedWidth * Math.cos(radians)) +
+        Math.abs(renderedHeight * Math.sin(radians));
+      const rotatedHeight =
+        Math.abs(renderedWidth * Math.sin(radians)) +
+        Math.abs(renderedHeight * Math.cos(radians));
 
-      if (normalizedRotation() === 90 || normalizedRotation() === 270) {
-        return Math.min(
-          viewportWidth / renderedHeight,
-          viewportHeight / renderedWidth
-        );
-      }
-
-      return 1;
+      return Math.min(viewportWidth / rotatedWidth, viewportHeight / rotatedHeight);
     }
 
     function applyViewStateNow() {
@@ -480,6 +499,7 @@
 
       document.body.classList.toggle("controls-hidden", viewState.hudHidden);
       mirrorToggleButton.classList.toggle("is-active", viewState.mirrored);
+      resetRotationButton.disabled = normalizedRotation() === 0;
       toggleGrayscaleButton.classList.toggle("is-active", viewState.grayscale);
 
       toggleHudButton.setAttribute("aria-label", viewState.hudHidden ? "Show controls" : "Hide controls");
@@ -562,7 +582,25 @@
       };
     }
 
+    function touchAngle(touches) {
+      const dx = touches[1].clientX - touches[0].clientX;
+      const dy = touches[1].clientY - touches[0].clientY;
+      return (Math.atan2(dy, dx) * 180) / Math.PI;
+    }
+
+    function angleDeltaDegrees(currentAngle, startAngle) {
+      let delta = currentAngle - startAngle;
+      while (delta > 180) {
+        delta -= 360;
+      }
+      while (delta < -180) {
+        delta += 360;
+      }
+      return delta;
+    }
+
     function startPanFromTouch(touch) {
+      hideHud();
       setGestureActive(true);
       gesture = {
         mode: "pan",
@@ -580,14 +618,17 @@
 
       if (event.touches.length === 2) {
         event.preventDefault();
+        hideHud();
         setGestureActive(true);
         gesture = {
           mode: "pinch",
           startZoom: viewState.zoom,
+          startRotation: viewState.rotation,
           startPanX: viewState.panX,
           startPanY: viewState.panY,
           startDistance: touchDistance(event.touches),
           startMidpoint: touchMidpoint(event.touches),
+          startAngle: touchAngle(event.touches),
         };
         return;
       }
@@ -615,7 +656,11 @@
           gesture.startZoom * (touchDistance(event.touches) / gesture.startDistance)
         );
         const midpoint = touchMidpoint(event.touches);
+        const nextRotation =
+          gesture.startRotation +
+          angleDeltaDegrees(touchAngle(event.touches), gesture.startAngle);
         viewState.zoom = nextZoom;
+        viewState.rotation = nextRotation;
         viewState.panX = gesture.startPanX + (midpoint.x - gesture.startMidpoint.x);
         viewState.panY = gesture.startPanY + (midpoint.y - gesture.startMidpoint.y);
         applyViewState();
@@ -805,6 +850,16 @@
 
     rotateImageButton.addEventListener("click", () => {
       viewState.rotation += 90;
+      applyViewState();
+      scheduleHudAutoHide();
+    });
+
+    resetRotationButton.addEventListener("click", () => {
+      if (normalizedRotation() === 0) {
+        return;
+      }
+      viewState.rotation = 0;
+      pulseButton(resetRotationButton);
       applyViewState();
       scheduleHudAutoHide();
     });
