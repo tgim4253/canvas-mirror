@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    sync::RwLock,
-};
+use std::{collections::HashMap, sync::RwLock};
 
 use image_server_core::{RoomChangeEvent, ServerCore};
 use image_server_model::RoomState;
@@ -39,7 +36,12 @@ impl WatcherService {
             manager.run(shutdown_rx, room_changes_rx).await;
         });
 
-        Ok(WatcherRuntime::new(shutdown_tx, supervisor, state, events_tx))
+        Ok(WatcherRuntime::new(
+            shutdown_tx,
+            supervisor,
+            state,
+            events_tx,
+        ))
     }
 }
 

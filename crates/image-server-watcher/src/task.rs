@@ -12,12 +12,7 @@ use tokio::{
     time::{interval_at, sleep, Instant},
 };
 
-use crate::{
-    error::WatcherError,
-    runtime::WatcherEvent,
-    trigger::WatchTrigger,
-    util::stabilize,
-};
+use crate::{error::WatcherError, runtime::WatcherEvent, trigger::WatchTrigger, util::stabilize};
 
 pub(crate) fn spawn_room_watcher(
     core: ServerCore,
