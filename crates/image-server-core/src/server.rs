@@ -46,6 +46,7 @@ impl ServerCore {
             rooms,
             room_revision: 0,
             room_events_tx: broadcast::channel(64).0,
+            snapshot_events_tx: broadcast::channel(64).0,
             logs: VecDeque::new(),
             log_cursor_start: 0,
         };

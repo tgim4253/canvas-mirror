@@ -12,6 +12,12 @@ pub struct RoomChangeEvent {
     pub revision: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SnapshotPublishedEvent {
+    pub room_id: String,
+    pub content_hash: String,
+}
+
 #[derive(Debug)]
 pub(crate) struct ServerCoreInner {
     pub(crate) config: ServerConfig,
@@ -19,6 +25,7 @@ pub(crate) struct ServerCoreInner {
     pub(crate) rooms: IndexMap<String, RoomRuntime>,
     pub(crate) room_revision: u64,
     pub(crate) room_events_tx: broadcast::Sender<RoomChangeEvent>,
+    pub(crate) snapshot_events_tx: broadcast::Sender<SnapshotPublishedEvent>,
     pub(crate) logs: VecDeque<LogEntryDto>,
     pub(crate) log_cursor_start: u64,
 }
@@ -49,6 +56,8 @@ pub(crate) struct RoomDeviceRuntime {
     pub(crate) id: String,
     pub(crate) name: String,
     pub(crate) platform: DevicePlatform,
+    pub(crate) screen_width: Option<u32>,
+    pub(crate) screen_height: Option<u32>,
     pub(crate) last_seen_at: Option<DateTime<Utc>>,
 }
 

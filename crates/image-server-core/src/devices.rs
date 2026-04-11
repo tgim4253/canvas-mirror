@@ -38,6 +38,8 @@ impl ServerCore {
                 id: join.id.clone(),
                 name: join.name.clone(),
                 platform: join.platform.clone(),
+                screen_width: join.screen_width,
+                screen_height: join.screen_height,
                 last_seen_at: Some(now),
             },
         );
@@ -80,6 +82,8 @@ impl ServerCore {
             id: device.id.clone(),
             name: device.name.clone(),
             platform: device.platform.clone(),
+            screen_width: device.screen_width,
+            screen_height: device.screen_height,
             state: image_server_model::DeviceState::Offline,
             last_seen_at: device.last_seen_at,
         };
@@ -90,5 +94,26 @@ impl ServerCore {
             format!("device '{}' left room '{}'", device_id, room_id),
         );
         Ok(view)
+    }
+
+    pub fn touch_device(&self, room_id: &str, device_id: &str) -> Result<(), CoreError> {
+        let mut inner = self.inner.write();
+        let runtime = inner
+            .rooms
+            .get_mut(room_id)
+            .ok_or_else(|| CoreError::RoomNotFound {
+                room_id: room_id.to_string(),
+            })?;
+        let device =
+            runtime
+                .devices
+                .get_mut(device_id)
+                .ok_or_else(|| CoreError::DeviceNotFound {
+                    room_id: room_id.to_string(),
+                    device_id: device_id.to_string(),
+                })?;
+
+        device.last_seen_at = Some(Utc::now());
+        Ok(())
     }
 }

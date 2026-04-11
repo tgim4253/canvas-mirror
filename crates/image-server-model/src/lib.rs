@@ -54,6 +54,8 @@ pub struct RoomDeviceDto {
     pub id: String,
     pub name: String,
     pub platform: DevicePlatform,
+    pub screen_width: Option<u32>,
+    pub screen_height: Option<u32>,
     pub state: DeviceState,
     pub last_seen_at: Option<DateTime<Utc>>,
 }
@@ -202,6 +204,8 @@ mod tests {
                 id: "device-a".to_string(),
                 name: "Front Desk Tablet".to_string(),
                 platform: DevicePlatform::Tablet,
+                screen_width: None,
+                screen_height: None,
                 state: DeviceState::Paused,
                 last_seen_at: None,
             }],
@@ -271,6 +275,8 @@ mod tests {
                 id: "device-a".to_string(),
                 name: "Front Desk Tablet".to_string(),
                 platform: DevicePlatform::Tablet,
+                screen_width: Some(1024),
+                screen_height: Some(768),
                 state: DeviceState::Online,
                 last_seen_at: Some(
                     Utc.with_ymd_and_hms(2026, 4, 11, 12, 0, 2)

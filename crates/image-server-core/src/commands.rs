@@ -16,6 +16,8 @@ pub struct JoinRoomCommand {
     pub id: String,
     pub name: String,
     pub platform: image_server_model::DevicePlatform,
+    pub screen_width: Option<u32>,
+    pub screen_height: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -34,6 +34,8 @@ pub(crate) fn room_device(
         id: device.id.clone(),
         name: device.name.clone(),
         platform: device.platform.clone(),
+        screen_width: device.screen_width,
+        screen_height: device.screen_height,
         state: device_state(room_state, device.last_seen_at, now, stale_timeout),
         last_seen_at: device.last_seen_at,
     }

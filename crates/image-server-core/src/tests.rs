@@ -123,6 +123,8 @@ fn join_room_publish_snapshot_and_read_snapshot_bytes() {
             id: "device-a".to_string(),
             name: "Front Desk Tablet".to_string(),
             platform: DevicePlatform::Tablet,
+            screen_width: Some(1024),
+            screen_height: Some(768),
         },
     )
     .expect("device should join");
@@ -167,6 +169,8 @@ fn duplicate_device_id_in_same_room_is_rejected() {
             id: "device-a".to_string(),
             name: "Front Desk Tablet".to_string(),
             platform: DevicePlatform::Tablet,
+            screen_width: Some(1024),
+            screen_height: Some(768),
         },
     )
     .expect("first join should succeed");
@@ -178,6 +182,8 @@ fn duplicate_device_id_in_same_room_is_rejected() {
                 id: "device-a".to_string(),
                 name: "Front Desk Tablet 2".to_string(),
                 platform: DevicePlatform::Desktop,
+                screen_width: Some(1920),
+                screen_height: Some(1080),
             },
         )
         .expect_err("duplicate device id in same room should be rejected");
@@ -205,6 +211,8 @@ fn different_device_ids_can_join_same_room() {
             id: "device-a".to_string(),
             name: "Front Desk Tablet".to_string(),
             platform: DevicePlatform::Tablet,
+            screen_width: Some(1024),
+            screen_height: Some(768),
         },
     )
     .expect("first device should join");
@@ -214,6 +222,8 @@ fn different_device_ids_can_join_same_room() {
             id: "device-b".to_string(),
             name: "Lobby Display".to_string(),
             platform: DevicePlatform::Desktop,
+            screen_width: Some(1920),
+            screen_height: Some(1080),
         },
     )
     .expect("second device should join");
@@ -238,6 +248,8 @@ fn same_device_id_is_allowed_in_different_rooms() {
             id: "device-a".to_string(),
             name: "Front Desk Tablet".to_string(),
             platform: DevicePlatform::Tablet,
+            screen_width: Some(1024),
+            screen_height: Some(768),
         },
     )
     .expect("room a join should succeed");
@@ -247,6 +259,8 @@ fn same_device_id_is_allowed_in_different_rooms() {
             id: "device-a".to_string(),
             name: "Front Desk Tablet".to_string(),
             platform: DevicePlatform::Tablet,
+            screen_width: Some(1024),
+            screen_height: Some(768),
         },
     )
     .expect("room b join should also succeed");
@@ -281,6 +295,8 @@ fn leave_room_allows_same_device_id_to_rejoin() {
             id: "device-a".to_string(),
             name: "Front Desk Tablet".to_string(),
             platform: DevicePlatform::Tablet,
+            screen_width: Some(1024),
+            screen_height: Some(768),
         },
     )
     .expect("first join should succeed");
@@ -292,6 +308,8 @@ fn leave_room_allows_same_device_id_to_rejoin() {
             id: "device-a".to_string(),
             name: "Front Desk Tablet".to_string(),
             platform: DevicePlatform::Tablet,
+            screen_width: Some(1024),
+            screen_height: Some(768),
         },
     )
     .expect("rejoin after leave should succeed");
@@ -334,6 +352,8 @@ fn paused_room_remains_queryable_but_rejects_snapshot_publish() {
             id: "device-a".to_string(),
             name: "Front Desk Tablet".to_string(),
             platform: DevicePlatform::Tablet,
+            screen_width: Some(1024),
+            screen_height: Some(768),
         },
     )
     .expect("device should join");
@@ -375,6 +395,8 @@ fn stale_timeout_marks_room_devices_stale() {
             id: "device-a".to_string(),
             name: "Front Desk Tablet".to_string(),
             platform: DevicePlatform::Tablet,
+            screen_width: Some(1024),
+            screen_height: Some(768),
         },
     )
     .expect("device should join");
@@ -383,6 +405,43 @@ fn stale_timeout_marks_room_devices_stale() {
 
     let room = core.room("room-a").expect("room should exist");
     assert_eq!(room.devices[0].state, DeviceState::Stale);
+}
+
+#[test]
+fn touch_device_refreshes_last_seen_and_preserves_capabilities() {
+    let dir = tempdir().expect("temp dir should exist");
+    let core = ServerCore::load(sample_config(dir.path().join("rooms.toml"), 30_000))
+        .expect("core should load");
+    core.create_room(sample_room("room-a", "Room A"))
+        .expect("room should be created");
+    core.join_room(
+        "room-a",
+        JoinRoomCommand {
+            id: "device-a".to_string(),
+            name: "Front Desk Tablet".to_string(),
+            platform: DevicePlatform::Tablet,
+            screen_width: Some(1024),
+            screen_height: Some(768),
+        },
+    )
+    .expect("device should join");
+
+    let before = core.room("room-a").expect("room should exist").devices[0]
+        .last_seen_at
+        .expect("join should set last_seen_at");
+    sleep(Duration::from_millis(2));
+    core.touch_device("room-a", "device-a")
+        .expect("touch should succeed");
+
+    let device = &core.room("room-a").expect("room should exist").devices[0];
+    assert_eq!(device.screen_width, Some(1024));
+    assert_eq!(device.screen_height, Some(768));
+    assert!(
+        device
+            .last_seen_at
+            .expect("touch should refresh last_seen_at")
+            >= before
+    );
 }
 
 #[test]

@@ -6,7 +6,7 @@ use image_server_model::{LogLevel, RoomState, SnapshotMetaDto};
 use crate::{
     commands::PublishSnapshotCommand,
     error::CoreError,
-    runtime::SnapshotBuffer,
+    runtime::{SnapshotBuffer, SnapshotPublishedEvent},
     server::{push_log, ServerCore},
 };
 
@@ -54,6 +54,10 @@ impl ServerCore {
             "snapshot",
             format!("snapshot published for room '{}'", room_id),
         );
+        let _ = inner.snapshot_events_tx.send(SnapshotPublishedEvent {
+            room_id: room_id.to_string(),
+            content_hash: meta.content_hash.clone(),
+        });
         Ok(meta)
     }
 }

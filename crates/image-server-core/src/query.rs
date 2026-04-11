@@ -6,7 +6,7 @@ use tokio::sync::broadcast;
 use crate::{
     error::CoreError,
     projection::{room_view, stale_timeout},
-    runtime::{RoomChangeEvent, SnapshotBuffer},
+    runtime::{RoomChangeEvent, SnapshotBuffer, SnapshotPublishedEvent},
     server::ServerCore,
 };
 
@@ -29,6 +29,10 @@ impl ServerCore {
 
     pub fn subscribe_room_changes(&self) -> broadcast::Receiver<RoomChangeEvent> {
         self.inner.read().room_events_tx.subscribe()
+    }
+
+    pub fn subscribe_snapshot_events(&self) -> broadcast::Receiver<SnapshotPublishedEvent> {
+        self.inner.read().snapshot_events_tx.subscribe()
     }
 
     pub fn room_records_with_revision(&self) -> (u64, Vec<RoomRecord>) {
