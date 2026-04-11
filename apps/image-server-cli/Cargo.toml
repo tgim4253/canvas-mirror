@@ -1,0 +1,20 @@
+[package]
+name = "image-server-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+image-server-config = { path = "../../crates/image-server-config" }
+image-server-core = { path = "../../crates/image-server-core" }
+image-server-model = { path = "../../crates/image-server-model" }
+image-server-store = { path = "../../crates/image-server-store" }
+serde_json.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

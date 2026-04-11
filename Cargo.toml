@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "apps/image-server-cli",
     "crates/image-server-config",
     "crates/image-server-core",
     "crates/image-server-store",

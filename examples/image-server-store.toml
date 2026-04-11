@@ -1,0 +1,15 @@
+version = 1
+
+[[rooms]]
+id = "room-illustration"
+name = "Illustration Board"
+target_path = "./samples/key-art.clip"
+mode = "watch"
+interval_ms = 2000
+debounce_ms = 750
+stabilize_ms = 300
+
+[rooms.resolution]
+kind = "contain"
+max_width = 1440
+max_height = 810
