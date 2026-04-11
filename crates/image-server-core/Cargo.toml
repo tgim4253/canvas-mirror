@@ -1,0 +1,23 @@
+[package]
+name = "image-server-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+chrono.workspace = true
+image-server-config = { path = "../image-server-config" }
+image-server-model = { path = "../image-server-model" }
+image-server-store = { path = "../image-server-store" }
+indexmap.workspace = true
+parking_lot.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
