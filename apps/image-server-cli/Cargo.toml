@@ -11,7 +11,7 @@ anyhow.workspace = true
 clap.workspace = true
 image-server-config = { path = "../../crates/image-server-config" }
 image-server-core = { path = "../../crates/image-server-core" }
-image-server-extractor = { path = "../../crates/image-server-extractor" }
+image-server-preview = { path = "../../crates/image-server-preview" }
 image-server-model = { path = "../../crates/image-server-model" }
 image-server-store = { path = "../../crates/image-server-store" }
 image-server-watcher = { path = "../../crates/image-server-watcher" }

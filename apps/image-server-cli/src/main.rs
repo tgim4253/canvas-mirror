@@ -1,14 +1,11 @@
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use image_server_config::ServerConfig;
 use image_server_core::{ServerCore, UpdateRoomCommand};
-use image_server_extractor::{ClipPreviewExtractor, PreviewExtractor};
 use image_server_model::{LogEntryDto, LogLevel, RoomDto, RoomState, ServerStatusDto};
+use image_server_preview::PreviewGenerator;
 use image_server_store::{DetectionMode, OutputResolution, RoomRecord};
 use image_server_watcher::{WatcherEvent, WatcherService};
 use sha2::{Digest, Sha256};
@@ -171,7 +168,7 @@ async fn serve(config_path: &Path) -> Result<()> {
         core.clone(),
         config.store_path.clone(),
         watchers.subscribe(),
-        Arc::new(ClipPreviewExtractor),
+        PreviewGenerator,
     );
     let attached_watchers = watchers.attached_rooms();
     let status = core.status();
@@ -239,13 +236,13 @@ fn spawn_snapshot_pipeline(
     core: ServerCore,
     store_path: PathBuf,
     mut events: broadcast::Receiver<WatcherEvent>,
-    extractor: Arc<dyn PreviewExtractor>,
+    preview_generator: PreviewGenerator,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         loop {
             match events.recv().await {
                 Ok(event) => {
-                    process_room_event(&core, &store_path, extractor.as_ref(), &event.room_id)
+                    process_room_event(&core, &store_path, &preview_generator, &event.room_id)
                         .await;
                 }
                 Err(broadcast::error::RecvError::Lagged(_)) => continue,
@@ -258,7 +255,7 @@ fn spawn_snapshot_pipeline(
 async fn process_room_event(
     core: &ServerCore,
     store_path: &Path,
-    extractor: &dyn PreviewExtractor,
+    preview_generator: &PreviewGenerator,
     room_id: &str,
 ) {
     let Some(room) = core.room_record(room_id) else {
@@ -269,7 +266,10 @@ async fn process_room_event(
     }
 
     let target_path = resolve_target_path(store_path, &room.target_path);
-    let preview = match extractor.extract(&target_path, &room.resolution).await {
+    let preview = match preview_generator
+        .generate(&target_path, &room.resolution)
+        .await
+    {
         Ok(preview) => preview,
         Err(error) => {
             let _ = core.set_room_error(room_id, error.to_string());

@@ -3,7 +3,7 @@ members = [
     "apps/image-server-cli",
     "crates/image-server-config",
     "crates/image-server-core",
-    "crates/image-server-extractor",
+    "crates/image-server-preview",
     "crates/image-server-store",
     "crates/image-server-model",
     "crates/image-server-watcher",
