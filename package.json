@@ -1,0 +1,16 @@
+{
+  "name": "canvas-mirror-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.13.1",
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter @canvas-mirror/manager-tauri dev",
+    "build:front": "pnpm --filter @canvas-mirror/manager-tauri build",
+    "tauri": "pnpm --filter @canvas-mirror/manager-tauri tauri",
+    "ui:demo": "pnpm --filter @canvas-mirror/manager-tauri ui:demo"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.7.1"
+  }
+}
