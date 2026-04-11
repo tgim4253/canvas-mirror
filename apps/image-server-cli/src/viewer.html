@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>image-server viewer</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f5f1;
+      --panel: #fffdf8;
+      --ink: #1c1a17;
+      --muted: #6f665d;
+      --line: #d8cec2;
+      --accent: #a6582b;
+      --accent-soft: #f2d6bf;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top left, rgba(166, 88, 43, 0.14), transparent 30%),
+        radial-gradient(circle at bottom right, rgba(84, 115, 95, 0.12), transparent 28%),
+        var(--bg);
+      color: var(--ink);
+      font: 16px/1.45 "SF Pro Display", "Apple SD Gothic Neo", "Pretendard", sans-serif;
+    }
+
+    main {
+      width: min(1120px, calc(100vw - 32px));
+      margin: 24px auto 48px;
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr);
+      gap: 20px;
+    }
+
+    .panel {
+      background: rgba(255, 253, 248, 0.88);
+      backdrop-filter: blur(10px);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: 0 18px 50px rgba(28, 26, 23, 0.08);
+    }
+
+    .controls {
+      padding: 22px;
+      position: sticky;
+      top: 24px;
+      height: fit-content;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+      letter-spacing: -0.04em;
+    }
+
+    p {
+      margin: 0 0 18px;
+      color: var(--muted);
+    }
+
+    label {
+      display: block;
+      margin: 0 0 14px;
+      font-size: 13px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    input, select, button, textarea {
+      width: 100%;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      padding: 12px 14px;
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+      background: var(--ink);
+      color: #fff;
+      border: none;
+      font-weight: 600;
+      transition: transform 120ms ease, opacity 120ms ease;
+    }
+
+    button:hover { transform: translateY(-1px); }
+    button:disabled { opacity: 0.45; cursor: default; transform: none; }
+
+    .stack {
+      display: grid;
+      gap: 10px;
+    }
+
+    .status {
+      margin-top: 18px;
+      padding: 14px;
+      border-radius: 16px;
+      background: var(--accent-soft);
+      color: #5c3118;
+      font-size: 14px;
+    }
+
+    .viewer {
+      padding: 18px;
+      display: grid;
+      grid-template-rows: auto auto minmax(320px, 1fr);
+      gap: 14px;
+    }
+
+    .meta {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .chip {
+      padding: 9px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+      background: rgba(255, 255, 255, 0.75);
+    }
+
+    .stage {
+      min-height: 320px;
+      border-radius: 20px;
+      overflow: hidden;
+      border: 1px dashed var(--line);
+      background:
+        linear-gradient(135deg, rgba(166, 88, 43, 0.08), transparent),
+        #fdf9f3;
+      display: grid;
+      place-items: center;
+    }
+
+    .stage img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: none;
+      background: #fff;
+    }
+
+    .placeholder {
+      color: var(--muted);
+      text-align: center;
+      padding: 24px;
+    }
+
+    .log {
+      width: 100%;
+      min-height: 180px;
+      resize: vertical;
+      background: #181512;
+      color: #f5eee4;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 920px) {
+      main {
+        width: min(100vw - 20px, 100%);
+        margin-top: 10px;
+        grid-template-columns: 1fr;
+      }
+
+      .controls {
+        position: static;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="panel controls">
+      <h1>image-server viewer</h1>
+      <p>Room snapshot stream over WebSocket.</p>
+
+      <div class="stack">
+        <label>
+          room id
+          <input id="roomId" placeholder="room-illustration" />
+        </label>
+
+        <label>
+          viewer name
+          <input id="name" value="Browser Viewer" />
+        </label>
+
+        <label>
+          platform
+          <select id="platform">
+            <option value="desktop">desktop</option>
+            <option value="tablet">tablet</option>
+            <option value="phone">phone</option>
+            <option value="unknown">unknown</option>
+          </select>
+        </label>
+
+        <button id="connect">Connect</button>
+        <button id="disconnect" disabled>Disconnect</button>
+      </div>
+
+      <div class="status" id="status">Disconnected.</div>
+    </section>
+
+    <section class="panel viewer">
+      <div class="meta">
+        <div class="chip" id="metaRoom">room: -</div>
+        <div class="chip" id="metaDevice">device: -</div>
+        <div class="chip" id="metaImage">image: -</div>
+      </div>
+
+      <textarea id="log" class="log" readonly></textarea>
+
+      <div class="stage">
+        <div class="placeholder" id="placeholder">
+          Connect to a room and wait for the next snapshot.
+        </div>
+        <img id="preview" alt="latest room preview" />
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const roomInput = document.getElementById("roomId");
+    const nameInput = document.getElementById("name");
+    const platformInput = document.getElementById("platform");
+    const connectButton = document.getElementById("connect");
+    const disconnectButton = document.getElementById("disconnect");
+    const statusBox = document.getElementById("status");
+    const logBox = document.getElementById("log");
+    const preview = document.getElementById("preview");
+    const placeholder = document.getElementById("placeholder");
+    const metaRoom = document.getElementById("metaRoom");
+    const metaDevice = document.getElementById("metaDevice");
+    const metaImage = document.getElementById("metaImage");
+
+    let socket = null;
+    let pendingSnapshotMeta = null;
+    let currentBlobUrl = null;
+
+    const roomFromQuery = new URLSearchParams(window.location.search).get("room");
+    if (roomFromQuery) {
+      roomInput.value = roomFromQuery;
+    }
+
+    function appendLog(message) {
+      const time = new Date().toLocaleTimeString();
+      logBox.value += `[${time}] ${message}\n`;
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    function setStatus(message) {
+      statusBox.textContent = message;
+    }
+
+    function setConnected(connected) {
+      connectButton.disabled = connected;
+      disconnectButton.disabled = !connected;
+    }
+
+    function disconnect(reason = "Disconnected.") {
+      if (socket) {
+        socket.close();
+        socket = null;
+      }
+      if (currentBlobUrl) {
+        URL.revokeObjectURL(currentBlobUrl);
+        currentBlobUrl = null;
+      }
+      pendingSnapshotMeta = null;
+      setConnected(false);
+      setStatus(reason);
+    }
+
+    function connect() {
+      const roomId = roomInput.value.trim();
+      const name = nameInput.value.trim() || "Browser Viewer";
+      const platform = platformInput.value;
+
+      if (!roomId) {
+        setStatus("room id is required");
+        return;
+      }
+
+      const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
+      socket = new WebSocket(wsUrl);
+      setStatus(`Connecting to ${wsUrl} ...`);
+
+      socket.addEventListener("open", () => {
+        const hello = {
+          type: "hello",
+          room_id: roomId,
+          name,
+          platform,
+          screen_width: window.innerWidth,
+          screen_height: window.innerHeight,
+        };
+        socket.send(JSON.stringify(hello));
+        appendLog(`sent hello for room '${roomId}'`);
+      });
+
+      socket.addEventListener("message", (event) => {
+        if (event.data instanceof Blob) {
+          if (!pendingSnapshotMeta) {
+            appendLog("received binary snapshot without metadata");
+            return;
+          }
+
+          if (currentBlobUrl) {
+            URL.revokeObjectURL(currentBlobUrl);
+          }
+          currentBlobUrl = URL.createObjectURL(event.data);
+          preview.src = currentBlobUrl;
+          preview.style.display = "block";
+          placeholder.style.display = "none";
+          metaImage.textContent =
+            `image: ${pendingSnapshotMeta.width ?? "?"}x${pendingSnapshotMeta.height ?? "?"} ${pendingSnapshotMeta.mime_type}`;
+          appendLog(
+            `snapshot ${pendingSnapshotMeta.content_hash.slice(0, 12)} (${pendingSnapshotMeta.bytes_len} bytes)`
+          );
+          pendingSnapshotMeta = null;
+          return;
+        }
+
+        const message = JSON.parse(event.data);
+
+        if (message.type === "joined") {
+          setConnected(true);
+          setStatus(`Connected to ${message.room_id}`);
+          metaRoom.textContent = `room: ${message.room_id}`;
+          metaDevice.textContent = `device: ${message.device_id}`;
+          appendLog(`joined room '${message.room_id}' as ${message.device_id}`);
+          return;
+        }
+
+        if (message.type === "snapshot_meta") {
+          pendingSnapshotMeta = message.meta;
+          return;
+        }
+
+        if (message.type === "error") {
+          setStatus(`Error: ${message.message}`);
+          appendLog(`error: ${message.message}`);
+        }
+      });
+
+      socket.addEventListener("close", () => {
+        disconnect("Connection closed.");
+      });
+
+      socket.addEventListener("error", () => {
+        setStatus("WebSocket error.");
+      });
+    }
+
+    connectButton.addEventListener("click", connect);
+    disconnectButton.addEventListener("click", () => disconnect());
+  </script>
+</body>
+</html>
