@@ -173,10 +173,18 @@ async fn serve(config_path: &Path) -> Result<()> {
     let (log_shutdown_tx, log_shutdown_rx) = watch::channel(false);
     let log_tailer = spawn_runtime_log_tailer(core.clone(), initial_log_cursor, log_shutdown_rx);
     let config = core.config();
+    let viewer_urls = viewer_public_urls(&config);
+    let qr_viewer_url = preferred_viewer_url(&viewer_urls)
+        .context("failed to derive a viewer URL for QR generation")?;
     let viewer_html = load_viewer_html(&config)?;
-    let transport = start_transport_server(core.clone(), config.bind_addr, viewer_html)
-        .await
-        .context("failed to start websocket transport")?;
+    let transport = start_transport_server(
+        core.clone(),
+        config.bind_addr,
+        viewer_html,
+        qr_viewer_url.clone(),
+    )
+    .await
+    .context("failed to start websocket transport")?;
     let watchers = WatcherService::new(core.clone())
         .start()
         .await
@@ -189,7 +197,6 @@ async fn serve(config_path: &Path) -> Result<()> {
     );
     let attached_watchers = watchers.attached_rooms();
     let status = core.status();
-    let viewer_urls = viewer_public_urls(&config);
 
     println!("config: {}", config_path.display());
     println!(
@@ -212,6 +219,7 @@ async fn serve(config_path: &Path) -> Result<()> {
     let ws_urls: Vec<String> = viewer_urls.iter().map(ws_public_url).collect();
     print_string_urls("ws_endpoint", "ws_endpoints", &ws_urls);
     print_room_viewer_links(&status.rooms, &viewer_urls);
+    print_room_qr_links(&status.rooms, &qr_viewer_url);
     println!("message: press Ctrl-C to stop");
 
     tokio::signal::ctrl_c()
@@ -502,6 +510,21 @@ fn print_room_viewer_links(rooms: &[RoomDto], viewer_urls: &[url::Url]) {
     }
 }
 
+fn print_room_qr_links(rooms: &[RoomDto], viewer_url: &url::Url) {
+    if rooms.is_empty() {
+        return;
+    }
+
+    println!("room_qr_links:");
+    for room in rooms {
+        println!(
+            "- {} -> {}",
+            room.room.id,
+            room_qr_url(viewer_url, &room.room.id)
+        );
+    }
+}
+
 fn room_viewer_urls(viewer_urls: &[url::Url], room_id: &str) -> Vec<url::Url> {
     viewer_urls
         .iter()
@@ -514,6 +537,30 @@ fn room_viewer_urls(viewer_urls: &[url::Url], room_id: &str) -> Vec<url::Url> {
             viewer_url
         })
         .collect()
+}
+
+fn room_qr_url(viewer_url: &url::Url, room_id: &str) -> url::Url {
+    let mut qr_url = viewer_url.clone();
+    qr_url.set_path("/qr.svg");
+    qr_url
+        .query_pairs_mut()
+        .clear()
+        .append_pair("room", room_id);
+    qr_url
+}
+
+fn preferred_viewer_url(viewer_urls: &[url::Url]) -> Option<url::Url> {
+    viewer_urls
+        .iter()
+        .find(|viewer_url| {
+            viewer_url
+                .host_str()
+                .and_then(|host| host.parse::<IpAddr>().ok())
+                .map(|ip| !ip.is_loopback())
+                .unwrap_or(true)
+        })
+        .cloned()
+        .or_else(|| viewer_urls.first().cloned())
 }
 
 fn print_string_urls(single_label: &str, multi_label: &str, urls: &[String]) {
@@ -959,6 +1006,44 @@ mod tests {
                     .parse()
                     .expect("room viewer URL should parse"),
             ]
+        );
+    }
+
+    #[test]
+    fn room_qr_url_appends_room_query_parameter_and_qr_path() {
+        let url = room_qr_url(
+            &"http://192.168.0.23:8787/"
+                .parse()
+                .expect("viewer URL should parse"),
+            "room-illustration",
+        );
+
+        assert_eq!(
+            url,
+            "http://192.168.0.23:8787/qr.svg?room=room-illustration"
+                .parse()
+                .expect("QR URL should parse")
+        );
+    }
+
+    #[test]
+    fn preferred_viewer_url_prefers_non_loopback_address() {
+        let viewer_urls = vec![
+            "http://127.0.0.1:8787/"
+                .parse()
+                .expect("viewer URL should parse"),
+            "http://192.168.0.23:8787/"
+                .parse()
+                .expect("viewer URL should parse"),
+        ];
+
+        assert_eq!(
+            preferred_viewer_url(&viewer_urls),
+            Some(
+                "http://192.168.0.23:8787/"
+                    .parse()
+                    .expect("viewer URL should parse")
+            )
         );
     }
 }

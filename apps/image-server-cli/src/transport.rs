@@ -4,15 +4,17 @@ use anyhow::{Context, Result};
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
-        State,
+        Query, State,
     },
-    response::{Html, Response},
+    http::{header::CONTENT_TYPE, StatusCode},
+    response::{Html, IntoResponse, Response},
     routing::get,
     Router,
 };
 use futures::{sink::Sink, SinkExt, StreamExt};
 use image_server_core::{CoreError, JoinRoomCommand, ServerCore, SnapshotBuffer};
 use image_server_model::{DevicePlatform, RoomDeviceDto, SnapshotMetaDto};
+use qrcode_generator::QrCodeEcc;
 use serde::{Deserialize, Serialize};
 use tokio::{
     net::TcpListener,
@@ -30,6 +32,7 @@ const DEFAULT_VIEWER_HTML: &str = include_str!("../../viewer/index.html");
 struct TransportAppState {
     core: ServerCore,
     viewer_html: Arc<str>,
+    qr_viewer_base: url::Url,
 }
 
 pub struct TransportRuntime {
@@ -50,14 +53,20 @@ pub async fn start_transport_server(
     core: ServerCore,
     bind_addr: SocketAddr,
     viewer_html: Arc<str>,
+    qr_viewer_base: url::Url,
 ) -> Result<TransportRuntime> {
     let listener = TcpListener::bind(bind_addr)
         .await
         .with_context(|| format!("failed to bind websocket transport to {bind_addr}"))?;
     let app = Router::new()
         .route("/", get(viewer_page))
+        .route("/qr.svg", get(qr_svg_page))
         .route("/ws", get(ws_handler))
-        .with_state(TransportAppState { core, viewer_html });
+        .with_state(TransportAppState {
+            core,
+            viewer_html,
+            qr_viewer_base,
+        });
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
     let handle = tokio::spawn(async move {
         let server = axum::serve(listener, app).with_graceful_shutdown(async move {
@@ -85,6 +94,30 @@ pub(crate) fn default_viewer_html() -> Arc<str> {
 
 async fn viewer_page(State(state): State<TransportAppState>) -> Html<String> {
     Html(state.viewer_html.to_string())
+}
+
+async fn qr_svg_page(
+    State(state): State<TransportAppState>,
+    Query(query): Query<QrCodeQuery>,
+) -> Result<impl IntoResponse, StatusCode> {
+    if query.room.trim().is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let mut viewer_url = state.qr_viewer_base.clone();
+    viewer_url
+        .query_pairs_mut()
+        .append_pair("room", &query.room);
+
+    let svg = qrcode_generator::to_svg_to_string(
+        viewer_url.as_str(),
+        QrCodeEcc::Medium,
+        320,
+        None::<&str>,
+    )
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(([(CONTENT_TYPE, "image/svg+xml; charset=utf-8")], svg))
 }
 
 async fn handle_socket(core: ServerCore, mut socket: WebSocket) {
@@ -417,4 +450,9 @@ enum ServerMessage {
     Error {
         message: String,
     },
+}
+
+#[derive(Debug, Deserialize)]
+struct QrCodeQuery {
+    room: String,
 }
