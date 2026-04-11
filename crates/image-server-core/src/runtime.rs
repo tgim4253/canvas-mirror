@@ -42,7 +42,6 @@ pub(crate) struct RoomDeviceRuntime {
     pub(crate) id: String,
     pub(crate) name: String,
     pub(crate) platform: DevicePlatform,
-    pub(crate) joined_at: DateTime<Utc>,
     pub(crate) last_seen_at: Option<DateTime<Utc>>,
 }
 

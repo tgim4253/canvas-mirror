@@ -24,21 +24,21 @@ impl ServerCore {
                 room_id: room_id.to_string(),
             })?;
         let now = Utc::now();
-        let last_snapshot_at = runtime
-            .latest_snapshot
-            .as_ref()
-            .map(|snapshot| snapshot.meta.created_at);
 
-        let existing_joined_at = runtime.devices.get(&join.id).map(|device| device.joined_at);
+        if runtime.devices.contains_key(&join.id) {
+            return Err(CoreError::DuplicateDeviceIdInRoom {
+                room_id: room_id.to_string(),
+                device_id: join.id,
+            });
+        }
+
         runtime.devices.insert(
             join.id.clone(),
             RoomDeviceRuntime {
                 id: join.id.clone(),
                 name: join.name.clone(),
                 platform: join.platform.clone(),
-                joined_at: existing_joined_at.unwrap_or(now),
                 last_seen_at: Some(now),
-                last_snapshot_at,
             },
         );
 
@@ -51,7 +51,7 @@ impl ServerCore {
             })?;
         let view = room_device(device, runtime.state.clone(), now, stale_timeout);
         push_log(
-            &mut inner.logs,
+            &mut inner,
             LogLevel::Info,
             "device",
             format!("device '{}' joined room '{}'", join.id, room_id),
@@ -82,10 +82,9 @@ impl ServerCore {
             platform: device.platform.clone(),
             state: image_server_model::DeviceState::Offline,
             last_seen_at: device.last_seen_at,
-            last_snapshot_at: device.last_snapshot_at,
         };
         push_log(
-            &mut inner.logs,
+            &mut inner,
             LogLevel::Warn,
             "device",
             format!("device '{}' left room '{}'", device_id, room_id),

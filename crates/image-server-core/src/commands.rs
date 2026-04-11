@@ -12,6 +12,7 @@ pub struct UpdateRoomCommand {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JoinRoomCommand {
+    /// Caller-provided, session-like identifier for the current connected endpoint.
     pub id: String,
     pub name: String,
     pub platform: image_server_model::DevicePlatform,

@@ -40,6 +40,8 @@ impl Default for OutputResolution {
 pub struct RoomRecord {
     pub id: String,
     pub name: String,
+    #[serde(default = "default_detection_enabled")]
+    pub detection_enabled: bool,
     pub target_path: PathBuf,
     #[serde(default)]
     pub mode: DetectionMode,
@@ -178,6 +180,10 @@ fn default_debounce_ms() -> u64 {
     750
 }
 
+fn default_detection_enabled() -> bool {
+    true
+}
+
 fn default_interval_ms() -> u64 {
     2_000
 }
@@ -254,6 +260,7 @@ mod tests {
         let replacement = RoomRecord {
             id: "room-a".to_string(),
             name: "Updated Room".to_string(),
+            detection_enabled: true,
             target_path: PathBuf::from("./samples/updated.clip"),
             mode: DetectionMode::Watch,
             interval_ms: 3_000,
@@ -357,6 +364,7 @@ mod tests {
                 RoomRecord {
                     id: "room-a".to_string(),
                     name: "Room A".to_string(),
+                    detection_enabled: true,
                     target_path: PathBuf::from("./samples/a.clip"),
                     mode: DetectionMode::Watch,
                     interval_ms: 2_000,
@@ -367,6 +375,7 @@ mod tests {
                 RoomRecord {
                     id: "room-a".to_string(),
                     name: "Room A Duplicate".to_string(),
+                    detection_enabled: true,
                     target_path: PathBuf::from("./samples/b.clip"),
                     mode: DetectionMode::Interval,
                     interval_ms: 2_500,
@@ -396,6 +405,7 @@ mod tests {
             rooms: vec![RoomRecord {
                 id: "room-a".to_string(),
                 name: "Room A".to_string(),
+                detection_enabled: true,
                 target_path: PathBuf::from("./samples/room-a.clip"),
                 mode: DetectionMode::Interval,
                 interval_ms: 2_500,

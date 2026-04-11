@@ -1,5 +1,6 @@
 use chrono::Utc;
-use image_server_model::{RoomDto, ServerStatusDto};
+use image_server_model::{LogEntryDto, RoomDto, ServerStatusDto};
+use image_server_store::RoomRecord;
 
 use crate::{
     error::CoreError,
@@ -9,6 +10,38 @@ use crate::{
 };
 
 impl ServerCore {
+    pub fn room_records(&self) -> Vec<RoomRecord> {
+        self.room_records_with_revision().1
+    }
+
+    pub fn room_revision(&self) -> u64 {
+        self.inner.read().room_revision
+    }
+
+    pub fn room_records_with_revision(&self) -> (u64, Vec<RoomRecord>) {
+        let inner = self.inner.read();
+        let rooms = inner.rooms.values().map(|room| room.room.clone()).collect();
+        (inner.room_revision, rooms)
+    }
+
+    pub fn log_cursor(&self) -> u64 {
+        let inner = self.inner.read();
+        inner.log_cursor_start + inner.logs.len() as u64
+    }
+
+    pub fn logs_since(&self, cursor: u64) -> Vec<LogEntryDto> {
+        self.read_logs_since(cursor).1
+    }
+
+    pub fn read_logs_since(&self, cursor: u64) -> (u64, Vec<LogEntryDto>) {
+        let inner = self.inner.read();
+        let start = cursor.max(inner.log_cursor_start);
+        let skip = (start - inner.log_cursor_start) as usize;
+        let next_cursor = inner.log_cursor_start + inner.logs.len() as u64;
+        let logs = inner.logs.iter().skip(skip).cloned().collect();
+        (next_cursor, logs)
+    }
+
     pub fn status(&self) -> ServerStatusDto {
         let inner = self.inner.read();
         let now = Utc::now();
@@ -22,7 +55,7 @@ impl ServerCore {
                 .values()
                 .map(|room| room_view(room, now, stale_timeout))
                 .collect(),
-            logs: inner.logs.clone(),
+            logs: inner.logs.iter().cloned().collect(),
         }
     }
 

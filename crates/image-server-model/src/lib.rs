@@ -50,18 +50,19 @@ pub struct SnapshotMetaDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RoomDeviceDto {
+    /// Session-like identifier for the current connected endpoint in this room.
     pub id: String,
     pub name: String,
     pub platform: DevicePlatform,
     pub state: DeviceState,
     pub last_seen_at: Option<DateTime<Utc>>,
-    pub last_snapshot_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RoomSummaryDto {
     pub id: String,
     pub name: String,
+    pub detection_enabled: bool,
     pub mode: DetectionMode,
     pub interval_ms: u64,
     pub debounce_ms: u64,
@@ -74,6 +75,7 @@ impl From<&RoomRecord> for RoomSummaryDto {
         Self {
             id: room.id.clone(),
             name: room.name.clone(),
+            detection_enabled: room.detection_enabled,
             mode: room.mode.clone(),
             interval_ms: room.interval_ms,
             debounce_ms: room.debounce_ms,
@@ -202,7 +204,6 @@ mod tests {
                 platform: DevicePlatform::Tablet,
                 state: DeviceState::Paused,
                 last_seen_at: None,
-                last_snapshot_at: None,
             }],
             latest_snapshot: None,
             last_error: None,
@@ -249,6 +250,7 @@ mod tests {
         RoomRecord {
             id: "room-a".to_string(),
             name: "Room A".to_string(),
+            detection_enabled: true,
             target_path: PathBuf::from("./samples/room-a.clip"),
             mode: DetectionMode::Interval,
             interval_ms: 2_500,
@@ -272,11 +274,6 @@ mod tests {
                 state: DeviceState::Online,
                 last_seen_at: Some(
                     Utc.with_ymd_and_hms(2026, 4, 11, 12, 0, 2)
-                        .single()
-                        .expect("timestamp must be valid"),
-                ),
-                last_snapshot_at: Some(
-                    Utc.with_ymd_and_hms(2026, 4, 11, 12, 0, 3)
                         .single()
                         .expect("timestamp must be valid"),
                 ),

@@ -1,11 +1,11 @@
 use std::{path::PathBuf, thread::sleep, time::Duration};
 
 use image_server_config::ServerConfig;
-use image_server_model::{DevicePlatform, DeviceState, RoomState};
+use image_server_model::{DevicePlatform, DeviceState, LogLevel, RoomState};
 use image_server_store::{DetectionMode, OutputResolution, RoomRecord, RoomStore};
 use tempfile::tempdir;
 
-use crate::{JoinRoomCommand, PublishSnapshotCommand, ServerCore, UpdateRoomCommand};
+use crate::{CoreError, JoinRoomCommand, PublishSnapshotCommand, ServerCore, UpdateRoomCommand};
 
 #[test]
 fn load_missing_store_starts_with_empty_status() {
@@ -39,6 +39,7 @@ fn create_update_and_delete_room_persist_store_changes() {
         "room-a",
         UpdateRoomCommand {
             name: Some("Room A Updated".to_string()),
+            detection_enabled: Some(false),
             mode: Some(DetectionMode::Interval),
             ..UpdateRoomCommand::default()
         },
@@ -53,6 +54,10 @@ fn create_update_and_delete_room_persist_store_changes() {
     assert_eq!(
         stored.room("room-a").map(|room| room.mode.clone()),
         Some(DetectionMode::Interval)
+    );
+    assert_eq!(
+        stored.room("room-a").map(|room| room.detection_enabled),
+        Some(false)
     );
 
     core.delete_room("room-a").expect("room should be deleted");
@@ -82,6 +87,29 @@ fn load_uses_existing_room_store() {
 }
 
 #[test]
+fn load_rejects_room_with_zero_interval() {
+    let dir = tempdir().expect("temp dir should exist");
+    let store_path = dir.path().join("rooms.toml");
+
+    let mut store = RoomStore::default();
+    let mut room = sample_room("room-a", "Room A");
+    room.interval_ms = 0;
+    store.upsert_room(room);
+    store
+        .save_to_path(&store_path)
+        .expect("seed store should be saved");
+
+    let error = ServerCore::load(sample_config(store_path, 30_000))
+        .expect_err("invalid room should fail to load");
+
+    assert!(matches!(
+        error,
+        CoreError::InvalidIntervalMs { ref room_id, interval_ms }
+            if room_id == "room-a" && interval_ms == 0
+    ));
+}
+
+#[test]
 fn join_room_publish_snapshot_and_read_snapshot_bytes() {
     let dir = tempdir().expect("temp dir should exist");
     let core = ServerCore::load(sample_config(dir.path().join("rooms.toml"), 30_000))
@@ -103,7 +131,6 @@ fn join_room_publish_snapshot_and_read_snapshot_bytes() {
         .publish_snapshot(
             "room-a",
             PublishSnapshotCommand {
-                device_id: Some("device-a".to_string()),
                 bytes: vec![1, 2, 3, 4],
                 mime_type: Some("image/png".to_string()),
                 width: Some(1440),
@@ -123,11 +150,178 @@ fn join_room_publish_snapshot_and_read_snapshot_bytes() {
     let room = core.room("room-a").expect("room view should exist");
     assert_eq!(room.devices.len(), 1);
     assert!(room.latest_snapshot.is_some());
-    assert!(room.devices[0].last_snapshot_at.is_some());
 }
 
 #[test]
-fn paused_room_marks_devices_paused_and_rejects_snapshots() {
+fn duplicate_device_id_in_same_room_is_rejected() {
+    let dir = tempdir().expect("temp dir should exist");
+    let core = ServerCore::load(sample_config(dir.path().join("rooms.toml"), 30_000))
+        .expect("core should load");
+    core.create_room(sample_room("room-a", "Room A"))
+        .expect("room should be created");
+
+    core.join_room(
+        "room-a",
+        JoinRoomCommand {
+            id: "device-a".to_string(),
+            name: "Front Desk Tablet".to_string(),
+            platform: DevicePlatform::Tablet,
+        },
+    )
+    .expect("first join should succeed");
+
+    let error = core
+        .join_room(
+            "room-a",
+            JoinRoomCommand {
+                id: "device-a".to_string(),
+                name: "Front Desk Tablet 2".to_string(),
+                platform: DevicePlatform::Desktop,
+            },
+        )
+        .expect_err("duplicate device id in same room should be rejected");
+
+    assert!(matches!(
+        error,
+        CoreError::DuplicateDeviceIdInRoom {
+            ref room_id,
+            ref device_id,
+        } if room_id == "room-a" && device_id == "device-a"
+    ));
+}
+
+#[test]
+fn different_device_ids_can_join_same_room() {
+    let dir = tempdir().expect("temp dir should exist");
+    let core = ServerCore::load(sample_config(dir.path().join("rooms.toml"), 30_000))
+        .expect("core should load");
+    core.create_room(sample_room("room-a", "Room A"))
+        .expect("room should be created");
+
+    core.join_room(
+        "room-a",
+        JoinRoomCommand {
+            id: "device-a".to_string(),
+            name: "Front Desk Tablet".to_string(),
+            platform: DevicePlatform::Tablet,
+        },
+    )
+    .expect("first device should join");
+    core.join_room(
+        "room-a",
+        JoinRoomCommand {
+            id: "device-b".to_string(),
+            name: "Lobby Display".to_string(),
+            platform: DevicePlatform::Desktop,
+        },
+    )
+    .expect("second device should join");
+
+    let room = core.room("room-a").expect("room should exist");
+    assert_eq!(room.devices.len(), 2);
+}
+
+#[test]
+fn same_device_id_is_allowed_in_different_rooms() {
+    let dir = tempdir().expect("temp dir should exist");
+    let core = ServerCore::load(sample_config(dir.path().join("rooms.toml"), 30_000))
+        .expect("core should load");
+    core.create_room(sample_room("room-a", "Room A"))
+        .expect("room a should be created");
+    core.create_room(sample_room("room-b", "Room B"))
+        .expect("room b should be created");
+
+    core.join_room(
+        "room-a",
+        JoinRoomCommand {
+            id: "device-a".to_string(),
+            name: "Front Desk Tablet".to_string(),
+            platform: DevicePlatform::Tablet,
+        },
+    )
+    .expect("room a join should succeed");
+    core.join_room(
+        "room-b",
+        JoinRoomCommand {
+            id: "device-a".to_string(),
+            name: "Front Desk Tablet".to_string(),
+            platform: DevicePlatform::Tablet,
+        },
+    )
+    .expect("room b join should also succeed");
+
+    assert_eq!(
+        core.room("room-a")
+            .expect("room a should exist")
+            .devices
+            .len(),
+        1
+    );
+    assert_eq!(
+        core.room("room-b")
+            .expect("room b should exist")
+            .devices
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn leave_room_allows_same_device_id_to_rejoin() {
+    let dir = tempdir().expect("temp dir should exist");
+    let core = ServerCore::load(sample_config(dir.path().join("rooms.toml"), 30_000))
+        .expect("core should load");
+    core.create_room(sample_room("room-a", "Room A"))
+        .expect("room should be created");
+
+    core.join_room(
+        "room-a",
+        JoinRoomCommand {
+            id: "device-a".to_string(),
+            name: "Front Desk Tablet".to_string(),
+            platform: DevicePlatform::Tablet,
+        },
+    )
+    .expect("first join should succeed");
+    core.leave_room("room-a", "device-a")
+        .expect("leave should succeed");
+    core.join_room(
+        "room-a",
+        JoinRoomCommand {
+            id: "device-a".to_string(),
+            name: "Front Desk Tablet".to_string(),
+            platform: DevicePlatform::Tablet,
+        },
+    )
+    .expect("rejoin after leave should succeed");
+
+    let room = core.room("room-a").expect("room should exist");
+    assert_eq!(room.devices.len(), 1);
+    assert_eq!(room.devices[0].id, "device-a");
+}
+
+#[test]
+fn create_room_rejects_empty_id_and_name() {
+    let dir = tempdir().expect("temp dir should exist");
+    let core = ServerCore::load(sample_config(dir.path().join("rooms.toml"), 30_000))
+        .expect("core should load");
+
+    let error = core
+        .create_room(sample_room("", "Room A"))
+        .expect_err("empty room id should be rejected");
+    assert!(matches!(error, CoreError::EmptyRoomId));
+
+    let error = core
+        .create_room(sample_room("room-a", "   "))
+        .expect_err("empty room name should be rejected");
+    assert!(matches!(
+        error,
+        CoreError::EmptyRoomName { ref room_id } if room_id == "room-a"
+    ));
+}
+
+#[test]
+fn paused_room_remains_queryable_but_rejects_snapshot_publish() {
     let dir = tempdir().expect("temp dir should exist");
     let core = ServerCore::load(sample_config(dir.path().join("rooms.toml"), 30_000))
         .expect("core should load");
@@ -146,21 +340,24 @@ fn paused_room_marks_devices_paused_and_rejects_snapshots() {
     core.pause_room("room-a").expect("room should pause");
     let room = core.room("room-a").expect("room should exist");
     assert_eq!(room.state, RoomState::Paused);
+    assert!(room.room.detection_enabled);
     assert_eq!(room.devices[0].state, DeviceState::Paused);
 
     let error = core
         .publish_snapshot(
             "room-a",
             PublishSnapshotCommand {
-                device_id: None,
                 bytes: vec![1, 2, 3],
                 mime_type: None,
                 width: None,
                 height: None,
             },
         )
-        .expect_err("paused room should reject snapshot");
-    assert!(matches!(error, crate::CoreError::RoomPaused { .. }));
+        .expect_err("paused room should reject snapshot publish");
+    assert!(matches!(
+        error,
+        CoreError::RoomPaused { ref room_id } if room_id == "room-a"
+    ));
 }
 
 #[test]
@@ -207,6 +404,58 @@ fn set_and_clear_room_error_updates_runtime_status() {
     assert!(room.last_error.is_none());
 }
 
+#[test]
+fn detection_disabled_room_starts_running_and_resume_does_not_mutate_flag() {
+    let dir = tempdir().expect("temp dir should exist");
+    let store_path = dir.path().join("rooms.toml");
+    let core =
+        ServerCore::load(sample_config(store_path.clone(), 30_000)).expect("core should load");
+
+    let mut room = sample_room("room-a", "Room A");
+    room.detection_enabled = false;
+    core.create_room(room).expect("room should be created");
+
+    let initial = core.room("room-a").expect("room should exist");
+    assert_eq!(initial.state, RoomState::Running);
+    assert!(!initial.room.detection_enabled);
+
+    core.pause_room("room-a").expect("room should pause");
+    let paused = core.room("room-a").expect("room should exist");
+    assert_eq!(paused.state, RoomState::Paused);
+    assert!(!paused.room.detection_enabled);
+
+    core.resume_room("room-a").expect("room should resume");
+    let resumed = core.room("room-a").expect("room should exist");
+    assert_eq!(resumed.state, RoomState::Running);
+    assert!(!resumed.room.detection_enabled);
+
+    let stored = RoomStore::load_from_path(&store_path).expect("store should load");
+    assert_eq!(
+        stored.room("room-a").map(|room| room.detection_enabled),
+        Some(false)
+    );
+}
+
+#[test]
+fn low_interval_room_emits_warning_log() {
+    let dir = tempdir().expect("temp dir should exist");
+    let core = ServerCore::load(sample_config(dir.path().join("rooms.toml"), 30_000))
+        .expect("core should load");
+    let mut room = sample_room("room-a", "Room A");
+    room.mode = DetectionMode::Interval;
+    room.interval_ms = 50;
+
+    core.create_room(room).expect("room should be created");
+
+    let status = core.status();
+    assert!(status.logs.iter().any(|log| {
+        log.level == LogLevel::Warn
+            && log
+                .message
+                .contains("room 'room-a' uses very low interval_ms=50")
+    }));
+}
+
 fn sample_config(store_path: PathBuf, stale_timeout_ms: u64) -> ServerConfig {
     ServerConfig {
         store_path,
@@ -219,6 +468,7 @@ fn sample_room(id: &str, name: &str) -> RoomRecord {
     RoomRecord {
         id: id.to_string(),
         name: name.to_string(),
+        detection_enabled: true,
         target_path: PathBuf::from(format!("./samples/{id}.clip")),
         mode: DetectionMode::Watch,
         interval_ms: 2_000,

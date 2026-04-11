@@ -49,26 +49,13 @@ impl ServerCore {
             created_at,
         };
 
-        if let Some(device_id) = snapshot.device_id.as_deref() {
-            let device =
-                runtime
-                    .devices
-                    .get_mut(device_id)
-                    .ok_or_else(|| CoreError::DeviceNotFound {
-                        room_id: room_id.to_string(),
-                        device_id: device_id.to_string(),
-                    })?;
-            device.last_seen_at = Some(created_at);
-            device.last_snapshot_at = Some(created_at);
-        }
-
         runtime.latest_snapshot = Some(SnapshotBuffer {
             meta: meta.clone(),
             bytes: Arc::from(snapshot.bytes.into_boxed_slice()),
         });
 
         push_log(
-            &mut inner.logs,
+            &mut inner,
             LogLevel::Info,
             "snapshot",
             format!("snapshot published for room '{}'", room_id),
