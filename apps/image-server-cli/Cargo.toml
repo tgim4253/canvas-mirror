@@ -11,9 +11,12 @@ anyhow.workspace = true
 clap.workspace = true
 image-server-config = { path = "../../crates/image-server-config" }
 image-server-core = { path = "../../crates/image-server-core" }
+image-server-extractor = { path = "../../crates/image-server-extractor" }
 image-server-model = { path = "../../crates/image-server-model" }
 image-server-store = { path = "../../crates/image-server-store" }
+image-server-watcher = { path = "../../crates/image-server-watcher" }
 serde_json.workspace = true
+sha2.workspace = true
 tokio.workspace = true
 
 [lints]

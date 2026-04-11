@@ -5,10 +5,11 @@ use image_server_model::{LogEntryDto, LogLevel};
 use image_server_store::{DetectionMode, RoomRecord, RoomStore, StoreError};
 use indexmap::IndexMap;
 use parking_lot::RwLock;
+use tokio::sync::broadcast;
 
 use crate::{
     error::CoreError,
-    runtime::{RoomRuntime, ServerCoreInner},
+    runtime::{RoomChangeEvent, RoomRuntime, ServerCoreInner},
 };
 
 const MAX_LOG_ENTRIES: usize = 1_024;
@@ -44,6 +45,7 @@ impl ServerCore {
             store,
             rooms,
             room_revision: 0,
+            room_events_tx: broadcast::channel(64).0,
             logs: VecDeque::new(),
             log_cursor_start: 0,
         };
@@ -92,6 +94,9 @@ pub(crate) fn push_log(inner: &mut ServerCoreInner, level: LogLevel, scope: &str
 
 pub(crate) fn bump_room_revision(inner: &mut ServerCoreInner) {
     inner.room_revision = inner.room_revision.wrapping_add(1);
+    let _ = inner.room_events_tx.send(RoomChangeEvent {
+        revision: inner.room_revision,
+    });
 }
 
 pub(crate) fn validate_room(room: &RoomRecord) -> Result<(), CoreError> {

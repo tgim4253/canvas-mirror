@@ -1,5 +1,5 @@
 [package]
-name = "image-server-core"
+name = "image-server-extractor"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -7,17 +7,12 @@ authors.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-chrono.workspace = true
-image-server-config = { path = "../image-server-config" }
-image-server-model = { path = "../image-server-model" }
+async-trait.workspace = true
+clip2preview.workspace = true
+image.workspace = true
 image-server-store = { path = "../image-server-store" }
-indexmap.workspace = true
-parking_lot.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-
-[dev-dependencies]
-tempfile.workspace = true
 
 [lints]
 workspace = true

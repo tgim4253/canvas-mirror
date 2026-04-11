@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use image_server_model::{LogLevel, RoomState, SnapshotMetaDto};
-use sha2::{Digest, Sha256};
 
 use crate::{
     commands::PublishSnapshotCommand,
@@ -32,14 +31,9 @@ impl ServerCore {
 
         let created_at = Utc::now();
         let bytes_len = snapshot.bytes.len();
-        let content_hash = {
-            let mut hasher = Sha256::new();
-            hasher.update(&snapshot.bytes);
-            format!("{:x}", hasher.finalize())
-        };
         let meta = SnapshotMetaDto {
             room_id: room_id.to_string(),
-            content_hash,
+            content_hash: snapshot.content_hash,
             mime_type: snapshot
                 .mime_type
                 .unwrap_or_else(|| "image/png".to_string()),

@@ -131,6 +131,7 @@ fn join_room_publish_snapshot_and_read_snapshot_bytes() {
         .publish_snapshot(
             "room-a",
             PublishSnapshotCommand {
+                content_hash: "preview-hash-a".to_string(),
                 bytes: vec![1, 2, 3, 4],
                 mime_type: Some("image/png".to_string()),
                 width: Some(1440),
@@ -347,6 +348,7 @@ fn paused_room_remains_queryable_but_rejects_snapshot_publish() {
         .publish_snapshot(
             "room-a",
             PublishSnapshotCommand {
+                content_hash: "paused-preview-hash".to_string(),
                 bytes: vec![1, 2, 3],
                 mime_type: None,
                 width: None,

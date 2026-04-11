@@ -1,5 +1,5 @@
 [package]
-name = "image-server-core"
+name = "image-server-watcher"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -7,16 +7,15 @@ authors.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-chrono.workspace = true
-image-server-config = { path = "../image-server-config" }
+image-server-core = { path = "../image-server-core" }
 image-server-model = { path = "../image-server-model" }
 image-server-store = { path = "../image-server-store" }
-indexmap.workspace = true
-parking_lot.workspace = true
+notify.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
+image-server-config = { path = "../image-server-config" }
 tempfile.workspace = true
 
 [lints]

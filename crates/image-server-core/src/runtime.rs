@@ -5,6 +5,12 @@ use image_server_config::ServerConfig;
 use image_server_model::{DevicePlatform, LogEntryDto, RoomState, SnapshotMetaDto};
 use image_server_store::{RoomRecord, RoomStore};
 use indexmap::IndexMap;
+use tokio::sync::broadcast;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RoomChangeEvent {
+    pub revision: u64,
+}
 
 #[derive(Debug)]
 pub(crate) struct ServerCoreInner {
@@ -12,6 +18,7 @@ pub(crate) struct ServerCoreInner {
     pub(crate) store: RoomStore,
     pub(crate) rooms: IndexMap<String, RoomRuntime>,
     pub(crate) room_revision: u64,
+    pub(crate) room_events_tx: broadcast::Sender<RoomChangeEvent>,
     pub(crate) logs: VecDeque<LogEntryDto>,
     pub(crate) log_cursor_start: u64,
 }

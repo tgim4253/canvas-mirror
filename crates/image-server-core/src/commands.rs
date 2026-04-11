@@ -20,6 +20,7 @@ pub struct JoinRoomCommand {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublishSnapshotCommand {
+    pub content_hash: String,
     pub bytes: Vec<u8>,
     pub mime_type: Option<String>,
     pub width: Option<u32>,

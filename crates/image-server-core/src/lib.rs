@@ -14,5 +14,5 @@ mod tests;
 
 pub use commands::{JoinRoomCommand, PublishSnapshotCommand, UpdateRoomCommand};
 pub use error::CoreError;
-pub use runtime::SnapshotBuffer;
+pub use runtime::{RoomChangeEvent, SnapshotBuffer};
 pub use server::ServerCore;

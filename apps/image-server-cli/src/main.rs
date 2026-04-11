@@ -1,11 +1,18 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use image_server_config::ServerConfig;
 use image_server_core::{ServerCore, UpdateRoomCommand};
-use image_server_model::{RoomDto, RoomState, ServerStatusDto};
+use image_server_extractor::{ClipPreviewExtractor, PreviewExtractor};
+use image_server_model::{LogEntryDto, LogLevel, RoomDto, RoomState, ServerStatusDto};
 use image_server_store::{DetectionMode, OutputResolution, RoomRecord};
+use image_server_watcher::{WatcherEvent, WatcherService};
+use sha2::{Digest, Sha256};
+use tokio::{sync::broadcast, task::JoinHandle, time::Duration};
 
 #[derive(Debug, Parser)]
 #[command(name = "image-server-cli")]
@@ -57,6 +64,8 @@ struct RoomCreateArgs {
     #[arg(long)]
     name: String,
     #[arg(long)]
+    detection_off: bool,
+    #[arg(long)]
     target_path: PathBuf,
     #[arg(long, value_enum, default_value_t = ModeArg::Watch)]
     mode: ModeArg,
@@ -82,6 +91,10 @@ struct RoomUpdateArgs {
     id: String,
     #[arg(long)]
     name: Option<String>,
+    #[arg(long, conflicts_with = "detection_off")]
+    detection_on: bool,
+    #[arg(long, conflicts_with = "detection_on")]
+    detection_off: bool,
     #[arg(long)]
     target_path: Option<PathBuf>,
     #[arg(long, value_enum)]
@@ -147,7 +160,20 @@ async fn main() -> Result<()> {
 
 async fn serve(config_path: &Path) -> Result<()> {
     let core = load_core(config_path)?;
+    let initial_log_cursor = core.log_cursor();
+    let log_tailer = spawn_runtime_log_tailer(core.clone(), initial_log_cursor);
     let config = core.config();
+    let watchers = WatcherService::new(core.clone())
+        .start()
+        .await
+        .context("failed to start room watchers")?;
+    let snapshot_pipeline = spawn_snapshot_pipeline(
+        core.clone(),
+        config.store_path.clone(),
+        watchers.subscribe(),
+        Arc::new(ClipPreviewExtractor),
+    );
+    let attached_watchers = watchers.attached_rooms();
     let status = core.status();
 
     println!("config: {}", config_path.display());
@@ -155,7 +181,10 @@ async fn serve(config_path: &Path) -> Result<()> {
     println!("store_path: {}", config.store_path.display());
     println!("rooms_loaded: {}", status.rooms.len());
     println!("runtime_ready: true");
-    println!("watchers_attached: false");
+    println!("watchers_attached: {}", attached_watchers);
+    if attached_watchers > 0 {
+        println!("watcher_rooms: {}", watchers.room_ids().join(", "));
+    }
     println!("http_ingress_attached: false");
     println!("message: press Ctrl-C to stop");
 
@@ -163,8 +192,148 @@ async fn serve(config_path: &Path) -> Result<()> {
         .await
         .context("failed while waiting for Ctrl-C")?;
 
+    watchers.shutdown().await;
+    snapshot_pipeline.abort();
+    let _ = snapshot_pipeline.await;
+    log_tailer.abort();
+    let _ = log_tailer.await;
     println!("shutdown: received Ctrl-C");
     Ok(())
+}
+
+fn spawn_runtime_log_tailer(core: ServerCore, start_cursor: u64) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut next_cursor = start_cursor;
+        let mut ticker = tokio::time::interval(Duration::from_millis(250));
+
+        loop {
+            ticker.tick().await;
+            let (cursor, logs) = core.read_logs_since(next_cursor);
+            for log in &logs {
+                print_runtime_log(log);
+            }
+            next_cursor = cursor;
+        }
+    })
+}
+
+fn print_runtime_log(log: &LogEntryDto) {
+    println!(
+        "log: {} {} [{}] {}",
+        log.at.to_rfc3339(),
+        format_log_level(&log.level),
+        log.scope,
+        log.message
+    );
+}
+
+fn format_log_level(level: &LogLevel) -> &'static str {
+    match level {
+        LogLevel::Info => "info",
+        LogLevel::Warn => "warn",
+        LogLevel::Error => "error",
+    }
+}
+
+fn spawn_snapshot_pipeline(
+    core: ServerCore,
+    store_path: PathBuf,
+    mut events: broadcast::Receiver<WatcherEvent>,
+    extractor: Arc<dyn PreviewExtractor>,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        loop {
+            match events.recv().await {
+                Ok(event) => {
+                    process_room_event(&core, &store_path, extractor.as_ref(), &event.room_id)
+                        .await;
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    })
+}
+
+async fn process_room_event(
+    core: &ServerCore,
+    store_path: &Path,
+    extractor: &dyn PreviewExtractor,
+    room_id: &str,
+) {
+    let Some(room) = core.room_record(room_id) else {
+        return;
+    };
+    if !room.detection_enabled {
+        return;
+    }
+
+    let target_path = resolve_target_path(store_path, &room.target_path);
+    let preview = match extractor.extract(&target_path, &room.resolution).await {
+        Ok(preview) => preview,
+        Err(error) => {
+            let _ = core.set_room_error(room_id, error.to_string());
+            return;
+        }
+    };
+    let content_hash = hash_bytes(&preview.bytes);
+
+    if should_skip_snapshot(core, room_id, &content_hash) {
+        clear_room_error_if_present(core, room_id);
+        return;
+    }
+
+    match core.publish_snapshot(
+        room_id,
+        image_server_core::PublishSnapshotCommand {
+            content_hash,
+            bytes: preview.bytes,
+            mime_type: Some(preview.mime_type),
+            width: preview.width,
+            height: preview.height,
+        },
+    ) {
+        Ok(_) => clear_room_error_if_present(core, room_id),
+        Err(image_server_core::CoreError::RoomNotFound { .. })
+        | Err(image_server_core::CoreError::RoomPaused { .. }) => {}
+        Err(error) => {
+            let _ = core.set_room_error(room_id, error.to_string());
+        }
+    }
+}
+
+fn clear_room_error_if_present(core: &ServerCore, room_id: &str) {
+    if let Some(room) = core.room(room_id) {
+        if room.state == RoomState::Error || room.last_error.is_some() {
+            let _ = core.clear_room_error(room_id);
+        }
+    }
+}
+
+fn should_skip_snapshot(core: &ServerCore, room_id: &str, content_hash: &str) -> bool {
+    let Some(current_hash) = core
+        .room(room_id)
+        .and_then(|room| room.latest_snapshot.map(|snapshot| snapshot.content_hash))
+    else {
+        return false;
+    };
+
+    current_hash == content_hash
+}
+
+fn hash_bytes(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    format!("{:x}", hasher.finalize())
+}
+
+fn resolve_target_path(store_path: &Path, target_path: &Path) -> PathBuf {
+    if target_path.is_absolute() {
+        return target_path.to_path_buf();
+    }
+
+    let base_dir = store_path.parent().unwrap_or_else(|| Path::new("."));
+    base_dir.join(target_path)
 }
 
 fn handle_room_command(config_path: &Path, command: RoomCommand) -> Result<()> {
@@ -184,6 +353,7 @@ fn handle_room_command(config_path: &Path, command: RoomCommand) -> Result<()> {
             let room = RoomRecord {
                 id: args.id,
                 name: args.name,
+                detection_enabled: !args.detection_off,
                 target_path: args.target_path,
                 mode: args.mode.into(),
                 interval_ms: args.interval_ms,
@@ -201,8 +371,14 @@ fn handle_room_command(config_path: &Path, command: RoomCommand) -> Result<()> {
         }
         RoomCommand::Update(args) => {
             let resolution = build_resolution(args.resolution, args.max_width, args.max_height)?;
+            let detection_enabled = match (args.detection_on, args.detection_off) {
+                (true, false) => Some(true),
+                (false, true) => Some(false),
+                _ => None,
+            };
             let command = UpdateRoomCommand {
                 name: args.name,
+                detection_enabled,
                 target_path: args.target_path,
                 mode: args.mode.map(Into::into),
                 interval_ms: args.interval_ms,
@@ -302,8 +478,14 @@ fn print_rooms(rooms: &[RoomDto]) {
             snapshot,
             room.last_error
                 .as_ref()
-                .map(|error| format!(" error=\"{}\"", error))
-                .unwrap_or_default()
+                .map(|error| format!(
+                    " detection={} error=\"{}\"",
+                    on_off_label(room.room.detection_enabled),
+                    error
+                ))
+                .unwrap_or_else(|| {
+                    format!(" detection={}", on_off_label(room.room.detection_enabled))
+                })
         );
     }
 }
@@ -316,6 +498,7 @@ fn print_room(room: &RoomDto, json: bool) -> Result<()> {
 
     println!("id: {}", room.room.id);
     println!("name: {}", room.room.name);
+    println!("detection: {}", on_off_label(room.room.detection_enabled));
     println!("state: {}", room_state_label(&room.state));
     println!("mode: {}", mode_label(&room.room.mode));
     println!("interval_ms: {}", room.room.interval_ms);
@@ -349,6 +532,14 @@ fn mode_label(mode: &DetectionMode) -> &'static str {
     match mode {
         DetectionMode::Watch => "watch",
         DetectionMode::Interval => "interval",
+    }
+}
+
+fn on_off_label(enabled: bool) -> &'static str {
+    if enabled {
+        "on"
+    } else {
+        "off"
     }
 }
 

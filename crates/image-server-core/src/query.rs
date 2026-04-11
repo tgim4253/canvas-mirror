@@ -1,21 +1,34 @@
 use chrono::Utc;
 use image_server_model::{LogEntryDto, RoomDto, ServerStatusDto};
 use image_server_store::RoomRecord;
+use tokio::sync::broadcast;
 
 use crate::{
     error::CoreError,
     projection::{room_view, stale_timeout},
-    runtime::SnapshotBuffer,
+    runtime::{RoomChangeEvent, SnapshotBuffer},
     server::ServerCore,
 };
 
 impl ServerCore {
+    pub fn room_record(&self, room_id: &str) -> Option<RoomRecord> {
+        self.inner
+            .read()
+            .rooms
+            .get(room_id)
+            .map(|room| room.room.clone())
+    }
+
     pub fn room_records(&self) -> Vec<RoomRecord> {
         self.room_records_with_revision().1
     }
 
     pub fn room_revision(&self) -> u64 {
         self.inner.read().room_revision
+    }
+
+    pub fn subscribe_room_changes(&self) -> broadcast::Receiver<RoomChangeEvent> {
+        self.inner.read().room_events_tx.subscribe()
     }
 
     pub fn room_records_with_revision(&self) -> (u64, Vec<RoomRecord>) {
