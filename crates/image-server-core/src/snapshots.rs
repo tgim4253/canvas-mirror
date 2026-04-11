@@ -1,0 +1,78 @@
+use std::sync::Arc;
+
+use chrono::Utc;
+use image_server_model::{LogLevel, RoomState, SnapshotMetaDto};
+use sha2::{Digest, Sha256};
+
+use crate::{
+    commands::PublishSnapshotCommand,
+    error::CoreError,
+    runtime::SnapshotBuffer,
+    server::{push_log, ServerCore},
+};
+
+impl ServerCore {
+    pub fn publish_snapshot(
+        &self,
+        room_id: &str,
+        snapshot: PublishSnapshotCommand,
+    ) -> Result<SnapshotMetaDto, CoreError> {
+        let mut inner = self.inner.write();
+        let runtime = inner
+            .rooms
+            .get_mut(room_id)
+            .ok_or_else(|| CoreError::RoomNotFound {
+                room_id: room_id.to_string(),
+            })?;
+        if runtime.state == RoomState::Paused {
+            return Err(CoreError::RoomPaused {
+                room_id: room_id.to_string(),
+            });
+        }
+
+        let created_at = Utc::now();
+        let bytes_len = snapshot.bytes.len();
+        let content_hash = {
+            let mut hasher = Sha256::new();
+            hasher.update(&snapshot.bytes);
+            format!("{:x}", hasher.finalize())
+        };
+        let meta = SnapshotMetaDto {
+            room_id: room_id.to_string(),
+            content_hash,
+            mime_type: snapshot
+                .mime_type
+                .unwrap_or_else(|| "image/png".to_string()),
+            bytes_len,
+            width: snapshot.width,
+            height: snapshot.height,
+            created_at,
+        };
+
+        if let Some(device_id) = snapshot.device_id.as_deref() {
+            let device =
+                runtime
+                    .devices
+                    .get_mut(device_id)
+                    .ok_or_else(|| CoreError::DeviceNotFound {
+                        room_id: room_id.to_string(),
+                        device_id: device_id.to_string(),
+                    })?;
+            device.last_seen_at = Some(created_at);
+            device.last_snapshot_at = Some(created_at);
+        }
+
+        runtime.latest_snapshot = Some(SnapshotBuffer {
+            meta: meta.clone(),
+            bytes: Arc::from(snapshot.bytes.into_boxed_slice()),
+        });
+
+        push_log(
+            &mut inner.logs,
+            LogLevel::Info,
+            "snapshot",
+            format!("snapshot published for room '{}'", room_id),
+        );
+        Ok(meta)
+    }
+}
