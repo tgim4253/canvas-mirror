@@ -34,6 +34,10 @@ fn create_update_and_delete_room_persist_store_changes() {
         stored.room("room-a").map(|room| room.name.as_str()),
         Some("Room A")
     );
+    assert!(stored
+        .room("room-a")
+        .map(|room| !room.viewer_token.is_empty())
+        .unwrap_or(false));
 
     core.update_room(
         "room-a",
@@ -83,6 +87,37 @@ fn load_uses_existing_room_store() {
     assert_eq!(
         status.room("room-a").map(|room| room.room.name.as_str()),
         Some("Room A")
+    );
+}
+
+#[test]
+fn load_backfills_missing_viewer_tokens_in_store() {
+    let dir = tempdir().expect("temp dir should exist");
+    let store_path = dir.path().join("rooms.toml");
+
+    let mut store = RoomStore::default();
+    let mut room = sample_room("room-a", "Room A");
+    room.viewer_token.clear();
+    store.upsert_room(room);
+    store
+        .save_to_path(&store_path)
+        .expect("seed store should be saved");
+
+    let core = ServerCore::load(sample_config(store_path.clone(), 30_000))
+        .expect("core should load and backfill tokens");
+
+    let stored = RoomStore::load_from_path(&store_path).expect("store should reload");
+    let stored_token = stored
+        .room("room-a")
+        .map(|room| room.viewer_token.clone())
+        .expect("room should exist");
+
+    assert!(!stored_token.is_empty());
+    assert_eq!(
+        core.room_record("room-a")
+            .map(|room| room.viewer_token)
+            .expect("room should exist"),
+        stored_token
     );
 }
 
@@ -529,6 +564,7 @@ fn sample_room(id: &str, name: &str) -> RoomRecord {
     RoomRecord {
         id: id.to_string(),
         name: name.to_string(),
+        viewer_token: format!("viewer-token-{id}"),
         detection_enabled: true,
         target_path: PathBuf::from(format!("./samples/{id}.clip")),
         mode: DetectionMode::Watch,

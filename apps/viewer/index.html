@@ -360,7 +360,9 @@
     const resetRotationButton = document.getElementById("resetRotation");
     const toggleFitButton = document.getElementById("toggleFit");
     const toggleGrayscaleButton = document.getElementById("toggleGrayscale");
-    const roomId = new URLSearchParams(window.location.search).get("room")?.trim() || "";
+    const searchParams = new URLSearchParams(window.location.search);
+    const roomId = searchParams.get("room")?.trim() || "";
+    const roomToken = searchParams.get("token")?.trim() || "";
 
     let socket = null;
     let pendingSnapshotMeta = null;
@@ -736,8 +738,8 @@
     }
 
     function connect() {
-      if (!roomId) {
-        setMessage("Missing room link.");
+      if (!roomId || !roomToken) {
+        setMessage("Invalid room link.");
         return;
       }
 
@@ -759,6 +761,7 @@
         socket.send(JSON.stringify({
           type: "hello",
           room_id: roomId,
+          token: roomToken,
           name: "Browser Viewer",
           platform: "desktop",
           screen_width: window.innerWidth,

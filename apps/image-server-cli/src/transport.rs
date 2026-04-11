@@ -100,14 +100,22 @@ async fn qr_svg_page(
     State(state): State<TransportAppState>,
     Query(query): Query<QrCodeQuery>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    if query.room.trim().is_empty() {
-        return Err(StatusCode::BAD_REQUEST);
+    if query.room.trim().is_empty() || query.token.trim().is_empty() {
+        return Err(StatusCode::NOT_FOUND);
     }
 
+    let Some(room) = state.core.room_record(&query.room) else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+    if room.viewer_token != query.token {
+        return Err(StatusCode::NOT_FOUND);
+    }
     let mut viewer_url = state.qr_viewer_base.clone();
     viewer_url
         .query_pairs_mut()
-        .append_pair("room", &query.room);
+        .clear()
+        .append_pair("room", &query.room)
+        .append_pair("token", &query.token);
 
     let svg = qrcode_generator::to_svg_to_string(
         viewer_url.as_str(),
@@ -131,6 +139,31 @@ async fn handle_socket(core: ServerCore, mut socket: WebSocket) {
     };
     let room_id = hello.room_id.clone();
     let device_id = Uuid::new_v4().to_string();
+    let room = match core.room_record(&room_id) {
+        Some(room) => room,
+        None => {
+            let _ = send_server_message(
+                &mut socket,
+                &ServerMessage::Error {
+                    message: "invalid room link".to_string(),
+                },
+            )
+            .await;
+            let _ = socket.close().await;
+            return;
+        }
+    };
+    if hello.token != room.viewer_token {
+        let _ = send_server_message(
+            &mut socket,
+            &ServerMessage::Error {
+                message: "invalid room link".to_string(),
+            },
+        )
+        .await;
+        let _ = socket.close().await;
+        return;
+    }
 
     let joined_device = match core.join_room(
         &room_id,
@@ -318,6 +351,7 @@ async fn receive_hello(socket: &mut WebSocket) -> Result<ClientHello, String> {
             Message::Text(text) => match serde_json::from_str::<HandshakeMessage>(&text) {
                 Ok(HandshakeMessage::Hello {
                     room_id,
+                    token,
                     name,
                     platform,
                     screen_width,
@@ -325,6 +359,7 @@ async fn receive_hello(socket: &mut WebSocket) -> Result<ClientHello, String> {
                 }) => {
                     return Ok(ClientHello {
                         room_id,
+                        token,
                         name,
                         platform,
                         screen_width,
@@ -417,6 +452,7 @@ fn touch_device_or_log(core: &ServerCore, room_id: &str, device_id: &str, source
 #[derive(Debug)]
 struct ClientHello {
     room_id: String,
+    token: String,
     name: String,
     platform: DevicePlatform,
     screen_width: Option<u32>,
@@ -428,6 +464,7 @@ struct ClientHello {
 enum HandshakeMessage {
     Hello {
         room_id: String,
+        token: String,
         name: String,
         platform: DevicePlatform,
         screen_width: Option<u32>,
@@ -455,4 +492,5 @@ enum ServerMessage {
 #[derive(Debug, Deserialize)]
 struct QrCodeQuery {
     room: String,
+    token: String,
 }

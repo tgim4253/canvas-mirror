@@ -7,6 +7,11 @@ use thiserror::Error;
 pub enum CoreError {
     #[error("failed to load or save room store: {0}")]
     Store(#[from] StoreError),
+    #[error("failed to persist room store migration after backfilling viewer tokens: {source}")]
+    StoreMigration {
+        #[source]
+        source: Box<CoreError>,
+    },
     #[error("room id must not be empty")]
     EmptyRoomId,
     #[error("room '{room_id}' must have a non-empty name")]

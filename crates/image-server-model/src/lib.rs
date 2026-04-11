@@ -256,6 +256,7 @@ mod tests {
         RoomRecord {
             id: "room-a".to_string(),
             name: "Room A".to_string(),
+            viewer_token: "viewer-token-a".to_string(),
             detection_enabled: true,
             target_path: PathBuf::from("./samples/room-a.clip"),
             mode: DetectionMode::Interval,

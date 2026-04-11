@@ -14,6 +14,8 @@ pub enum PreviewError {
     ReadSource(#[from] std::io::Error),
     #[error("failed to decode or resize preview: {0}")]
     Image(#[from] image::ImageError),
+    #[error("failed to extract PSD preview from {path}: {reason}")]
+    PsdPreview { path: String, reason: String },
     #[error("unsupported preview input: {path}")]
     UnsupportedInput { path: String },
 }
@@ -58,6 +60,7 @@ fn generate_preview_from_disk(
     let preview = match input_kind(input)? {
         InputKind::Clip => load_clip_preview(input)?,
         InputKind::StaticImage => load_static_image_preview(input)?,
+        InputKind::Psd => load_psd_preview(input)?,
     };
 
     apply_resolution(preview, resolution)
@@ -141,6 +144,15 @@ fn load_static_image_preview(input: &Path) -> Result<LoadedPreview, PreviewError
     })
 }
 
+fn load_psd_preview(input: &Path) -> Result<LoadedPreview, PreviewError> {
+    let bytes = fs::read(input)?;
+
+    extract_psd_thumbnail(&bytes).map_err(|reason| PreviewError::PsdPreview {
+        path: input.display().to_string(),
+        reason,
+    })
+}
+
 fn encode_image(
     image: &DynamicImage,
     original_mime: &str,
@@ -174,6 +186,7 @@ fn write_image(image: &DynamicImage, format: ImageFormat) -> Result<Vec<u8>, Pre
 enum InputKind {
     Clip,
     StaticImage,
+    Psd,
 }
 
 fn input_kind(input: &Path) -> Result<InputKind, PreviewError> {
@@ -185,6 +198,7 @@ fn input_kind(input: &Path) -> Result<InputKind, PreviewError> {
     {
         Some("clip") => Ok(InputKind::Clip),
         Some("png" | "jpg" | "jpeg" | "webp") => Ok(InputKind::StaticImage),
+        Some("psd") => Ok(InputKind::Psd),
         _ => Err(PreviewError::UnsupportedInput {
             path: input.display().to_string(),
         }),
@@ -212,6 +226,195 @@ fn image_format_to_mime(format: ImageFormat) -> Option<&'static str> {
         ImageFormat::WebP => Some("image/webp"),
         _ => None,
     }
+}
+
+const PSD_HEADER_LEN: usize = 26;
+const PSD_THUMBNAIL_HEADER_LEN: usize = 28;
+const PSD_THUMBNAIL_RESOURCE_IDS: [u16; 2] = [1036, 1033];
+
+fn extract_psd_thumbnail(bytes: &[u8]) -> Result<LoadedPreview, String> {
+    if slice_range(bytes, 0, 4, bytes.len(), "PSD signature")? != b"8BPS" {
+        return Err("missing PSD signature".to_string());
+    }
+
+    let version = read_be_u16(bytes, 4, bytes.len(), "PSD version")?;
+    if version != 1 {
+        return Err(format!("unsupported PSD version {version}"));
+    }
+
+    let mut offset = PSD_HEADER_LEN;
+    let color_mode_len =
+        read_be_u32(bytes, offset, bytes.len(), "PSD color mode data length")? as usize;
+    offset += 4;
+    offset = checked_advance(offset, color_mode_len, bytes.len(), "PSD color mode data")?;
+
+    let resources_len =
+        read_be_u32(bytes, offset, bytes.len(), "PSD image resources length")? as usize;
+    offset += 4;
+    let resources_end = checked_advance(
+        offset,
+        resources_len,
+        bytes.len(),
+        "PSD image resources section",
+    )?;
+
+    let mut resource_offset = offset;
+    let mut thumbnail_error = None;
+
+    while resource_offset < resources_end {
+        if slice_range(
+            bytes,
+            resource_offset,
+            4,
+            resources_end,
+            "PSD image resource signature",
+        )? != b"8BIM"
+        {
+            return Err(format!(
+                "invalid PSD image resource signature at byte offset {resource_offset}"
+            ));
+        }
+        resource_offset += 4;
+
+        let resource_id = read_be_u16(
+            bytes,
+            resource_offset,
+            resources_end,
+            "PSD image resource id",
+        )?;
+        resource_offset += 2;
+
+        let name_len = read_u8(
+            bytes,
+            resource_offset,
+            resources_end,
+            "PSD image resource name length",
+        )? as usize;
+        resource_offset += 1;
+        resource_offset = checked_advance(
+            resource_offset,
+            name_len,
+            resources_end,
+            "PSD image resource name",
+        )?;
+        if (1 + name_len) % 2 != 0 {
+            resource_offset = checked_advance(
+                resource_offset,
+                1,
+                resources_end,
+                "PSD image resource name padding",
+            )?;
+        }
+
+        let payload_len = read_be_u32(
+            bytes,
+            resource_offset,
+            resources_end,
+            "PSD image resource payload length",
+        )? as usize;
+        resource_offset += 4;
+
+        let payload_end = checked_advance(
+            resource_offset,
+            payload_len,
+            resources_end,
+            "PSD image resource payload",
+        )?;
+        let payload = &bytes[resource_offset..payload_end];
+
+        if PSD_THUMBNAIL_RESOURCE_IDS.contains(&resource_id) {
+            match parse_psd_thumbnail_payload(payload) {
+                Ok(preview) => return Ok(preview),
+                Err(reason) => thumbnail_error = Some(reason),
+            }
+        }
+
+        resource_offset = payload_end;
+        if payload_len % 2 != 0 {
+            resource_offset = checked_advance(
+                resource_offset,
+                1,
+                resources_end,
+                "PSD image resource payload padding",
+            )?;
+        }
+    }
+
+    if let Some(reason) = thumbnail_error {
+        return Err(reason);
+    }
+
+    Err("missing PSD thumbnail resource 1036/1033".to_string())
+}
+
+fn parse_psd_thumbnail_payload(payload: &[u8]) -> Result<LoadedPreview, String> {
+    let format = read_be_u32(payload, 0, payload.len(), "PSD thumbnail format")?;
+    let width = read_be_u32(payload, 4, payload.len(), "PSD thumbnail width")?;
+    let height = read_be_u32(payload, 8, payload.len(), "PSD thumbnail height")?;
+    let _widthbytes = read_be_u32(payload, 12, payload.len(), "PSD thumbnail widthbytes")?;
+    let _total_size = read_be_u32(payload, 16, payload.len(), "PSD thumbnail total size")?;
+    let compressed_size =
+        read_be_u32(payload, 20, payload.len(), "PSD thumbnail compressed size")? as usize;
+    let _bits_per_pixel = read_be_u16(payload, 24, payload.len(), "PSD thumbnail bits per pixel")?;
+    let _planes = read_be_u16(payload, 26, payload.len(), "PSD thumbnail planes")?;
+
+    if format != 1 {
+        return Err(format!(
+            "unsupported PSD thumbnail format {format}, expected JPEG (1)"
+        ));
+    }
+
+    let jpeg_bytes = slice_range(
+        payload,
+        PSD_THUMBNAIL_HEADER_LEN,
+        compressed_size,
+        payload.len(),
+        "PSD thumbnail JPEG bytes",
+    )?
+    .to_vec();
+
+    Ok(LoadedPreview {
+        bytes: jpeg_bytes,
+        mime_type: "image/jpeg".to_string(),
+        dimensions: Some((width, height)),
+    })
+}
+
+fn read_u8(bytes: &[u8], offset: usize, limit: usize, label: &str) -> Result<u8, String> {
+    Ok(slice_range(bytes, offset, 1, limit, label)?[0])
+}
+
+fn read_be_u16(bytes: &[u8], offset: usize, limit: usize, label: &str) -> Result<u16, String> {
+    let slice = slice_range(bytes, offset, 2, limit, label)?;
+    Ok(u16::from_be_bytes([slice[0], slice[1]]))
+}
+
+fn read_be_u32(bytes: &[u8], offset: usize, limit: usize, label: &str) -> Result<u32, String> {
+    let slice = slice_range(bytes, offset, 4, limit, label)?;
+    Ok(u32::from_be_bytes([slice[0], slice[1], slice[2], slice[3]]))
+}
+
+fn slice_range<'a>(
+    bytes: &'a [u8],
+    offset: usize,
+    len: usize,
+    limit: usize,
+    label: &str,
+) -> Result<&'a [u8], String> {
+    let end = checked_advance(offset, len, limit, label)?;
+    Ok(&bytes[offset..end])
+}
+
+fn checked_advance(offset: usize, len: usize, limit: usize, label: &str) -> Result<usize, String> {
+    let end = offset
+        .checked_add(len)
+        .ok_or_else(|| format!("{label} offset overflow"))?;
+
+    if end > limit {
+        return Err(format!("{label} exceeds section bounds"));
+    }
+
+    Ok(end)
 }
 
 #[cfg(test)]
@@ -263,6 +466,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn extracts_psd_embedded_jpeg_preview_from_resource_1036() {
+        let dir = tempfile::tempdir().expect("temp dir should exist");
+        let image_path = dir.path().join("sample.psd");
+        let expected_bytes = write_sample_psd(&image_path, 160, 101, 1036);
+
+        let preview = PreviewGenerator
+            .generate(&image_path, &OutputResolution::Source)
+            .await
+            .expect("psd preview should extract");
+
+        assert_eq!(preview.mime_type, "image/jpeg");
+        assert_eq!(preview.width, Some(160));
+        assert_eq!(preview.height, Some(101));
+        assert_eq!(preview.bytes, expected_bytes);
+    }
+
+    #[tokio::test]
+    async fn resizes_psd_embedded_jpeg_preview_from_resource_1033() {
+        let dir = tempfile::tempdir().expect("temp dir should exist");
+        let image_path = dir.path().join("legacy.psd");
+        write_sample_psd(&image_path, 200, 100, 1033);
+
+        let preview = PreviewGenerator
+            .generate(
+                &image_path,
+                &OutputResolution::Contain {
+                    max_width: 50,
+                    max_height: 50,
+                },
+            )
+            .await
+            .expect("psd preview should resize");
+
+        assert_eq!(preview.mime_type, "image/jpeg");
+        assert_eq!(preview.width, Some(50));
+        assert_eq!(preview.height, Some(25));
+    }
+
+    #[tokio::test]
     async fn rejects_unsupported_input_extension() {
         let dir = tempfile::tempdir().expect("temp dir should exist");
         let text_path = dir.path().join("note.txt");
@@ -279,5 +521,50 @@ mod tests {
     fn write_sample_png(path: &Path, width: u32, height: u32) {
         let image = DynamicImage::new_rgba8(width, height);
         image.save(path).expect("sample png should save");
+    }
+
+    fn write_sample_psd(path: &Path, width: u32, height: u32, resource_id: u16) -> Vec<u8> {
+        let jpeg_bytes = write_image(&DynamicImage::new_rgb8(width, height), ImageFormat::Jpeg)
+            .expect("sample jpeg should encode");
+        let widthbytes = ((width * 24 + 31) / 32) * 4;
+        let total_size = widthbytes * height;
+
+        let mut thumbnail_payload = Vec::new();
+        thumbnail_payload.extend_from_slice(&1_u32.to_be_bytes());
+        thumbnail_payload.extend_from_slice(&width.to_be_bytes());
+        thumbnail_payload.extend_from_slice(&height.to_be_bytes());
+        thumbnail_payload.extend_from_slice(&widthbytes.to_be_bytes());
+        thumbnail_payload.extend_from_slice(&total_size.to_be_bytes());
+        thumbnail_payload.extend_from_slice(&(jpeg_bytes.len() as u32).to_be_bytes());
+        thumbnail_payload.extend_from_slice(&24_u16.to_be_bytes());
+        thumbnail_payload.extend_from_slice(&1_u16.to_be_bytes());
+        thumbnail_payload.extend_from_slice(&jpeg_bytes);
+
+        let mut resource_block = Vec::new();
+        resource_block.extend_from_slice(b"8BIM");
+        resource_block.extend_from_slice(&resource_id.to_be_bytes());
+        resource_block.extend_from_slice(&[0, 0]);
+        resource_block.extend_from_slice(&(thumbnail_payload.len() as u32).to_be_bytes());
+        resource_block.extend_from_slice(&thumbnail_payload);
+        if thumbnail_payload.len() % 2 != 0 {
+            resource_block.push(0);
+        }
+
+        let mut psd_bytes = Vec::new();
+        psd_bytes.extend_from_slice(b"8BPS");
+        psd_bytes.extend_from_slice(&1_u16.to_be_bytes());
+        psd_bytes.extend_from_slice(&[0; 6]);
+        psd_bytes.extend_from_slice(&3_u16.to_be_bytes());
+        psd_bytes.extend_from_slice(&height.to_be_bytes());
+        psd_bytes.extend_from_slice(&width.to_be_bytes());
+        psd_bytes.extend_from_slice(&8_u16.to_be_bytes());
+        psd_bytes.extend_from_slice(&3_u16.to_be_bytes());
+        psd_bytes.extend_from_slice(&0_u32.to_be_bytes());
+        psd_bytes.extend_from_slice(&(resource_block.len() as u32).to_be_bytes());
+        psd_bytes.extend_from_slice(&resource_block);
+
+        fs::write(path, &psd_bytes).expect("sample psd should write");
+
+        jpeg_bytes
     }
 }

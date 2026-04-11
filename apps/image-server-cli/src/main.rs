@@ -196,6 +196,7 @@ async fn serve(config_path: &Path) -> Result<()> {
         PreviewGenerator,
     );
     let attached_watchers = watchers.attached_rooms();
+    let room_records = core.room_records();
     let status = core.status();
 
     println!("config: {}", config_path.display());
@@ -218,8 +219,8 @@ async fn serve(config_path: &Path) -> Result<()> {
     print_public_urls("viewer_url", "viewer_urls", &viewer_urls);
     let ws_urls: Vec<String> = viewer_urls.iter().map(ws_public_url).collect();
     print_string_urls("ws_endpoint", "ws_endpoints", &ws_urls);
-    print_room_viewer_links(&status.rooms, &viewer_urls);
-    print_room_qr_links(&status.rooms, &qr_viewer_url);
+    print_room_viewer_links(&room_records, &viewer_urls);
+    print_room_qr_links(&room_records, &qr_viewer_url);
     println!("message: press Ctrl-C to stop");
 
     tokio::signal::ctrl_c()
@@ -497,35 +498,31 @@ fn print_public_urls(single_label: &str, multi_label: &str, urls: &[url::Url]) {
     print_string_urls(single_label, multi_label, &rendered);
 }
 
-fn print_room_viewer_links(rooms: &[RoomDto], viewer_urls: &[url::Url]) {
+fn print_room_viewer_links(rooms: &[RoomRecord], viewer_urls: &[url::Url]) {
     if rooms.is_empty() || viewer_urls.is_empty() {
         return;
     }
 
     println!("room_viewer_links:");
     for room in rooms {
-        for viewer_url in room_viewer_urls(viewer_urls, &room.room.id) {
-            println!("- {} -> {}", room.room.id, viewer_url);
+        for viewer_url in room_viewer_urls(viewer_urls, room) {
+            println!("- {} -> {}", room.id, viewer_url);
         }
     }
 }
 
-fn print_room_qr_links(rooms: &[RoomDto], viewer_url: &url::Url) {
+fn print_room_qr_links(rooms: &[RoomRecord], viewer_url: &url::Url) {
     if rooms.is_empty() {
         return;
     }
 
     println!("room_qr_links:");
     for room in rooms {
-        println!(
-            "- {} -> {}",
-            room.room.id,
-            room_qr_url(viewer_url, &room.room.id)
-        );
+        println!("- {} -> {}", room.id, room_qr_url(viewer_url, room));
     }
 }
 
-fn room_viewer_urls(viewer_urls: &[url::Url], room_id: &str) -> Vec<url::Url> {
+fn room_viewer_urls(viewer_urls: &[url::Url], room: &RoomRecord) -> Vec<url::Url> {
     viewer_urls
         .iter()
         .cloned()
@@ -533,19 +530,21 @@ fn room_viewer_urls(viewer_urls: &[url::Url], room_id: &str) -> Vec<url::Url> {
             viewer_url
                 .query_pairs_mut()
                 .clear()
-                .append_pair("room", room_id);
+                .append_pair("room", &room.id)
+                .append_pair("token", &room.viewer_token);
             viewer_url
         })
         .collect()
 }
 
-fn room_qr_url(viewer_url: &url::Url, room_id: &str) -> url::Url {
+fn room_qr_url(viewer_url: &url::Url, room: &RoomRecord) -> url::Url {
     let mut qr_url = viewer_url.clone();
     qr_url.set_path("/qr.svg");
     qr_url
         .query_pairs_mut()
         .clear()
-        .append_pair("room", room_id);
+        .append_pair("room", &room.id)
+        .append_pair("token", &room.viewer_token);
     qr_url
 }
 
@@ -602,6 +601,7 @@ fn handle_room_command(config_path: &Path, command: RoomCommand) -> Result<()> {
             let room = RoomRecord {
                 id: args.id,
                 name: args.name,
+                viewer_token: String::new(),
                 detection_enabled: !args.detection_off,
                 target_path: args.target_path,
                 mode: args.mode.into(),
@@ -993,16 +993,27 @@ mod tests {
                     .parse()
                     .expect("viewer URL should parse"),
             ],
-            "room-illustration",
+            &RoomRecord {
+                id: "room-illustration".to_string(),
+                name: "Illustration Board".to_string(),
+                viewer_token: "viewer-token-abc".to_string(),
+                detection_enabled: true,
+                target_path: PathBuf::from("./sample.clip"),
+                mode: DetectionMode::Watch,
+                interval_ms: 2_000,
+                debounce_ms: 750,
+                stabilize_ms: 300,
+                resolution: OutputResolution::Source,
+            },
         );
 
         assert_eq!(
             urls,
             vec![
-                "http://127.0.0.1:8787/?room=room-illustration"
+                "http://127.0.0.1:8787/?room=room-illustration&token=viewer-token-abc"
                     .parse()
                     .expect("room viewer URL should parse"),
-                "http://192.168.0.23:8787/?room=room-illustration"
+                "http://192.168.0.23:8787/?room=room-illustration&token=viewer-token-abc"
                     .parse()
                     .expect("room viewer URL should parse"),
             ]
@@ -1015,12 +1026,23 @@ mod tests {
             &"http://192.168.0.23:8787/"
                 .parse()
                 .expect("viewer URL should parse"),
-            "room-illustration",
+            &RoomRecord {
+                id: "room-illustration".to_string(),
+                name: "Illustration Board".to_string(),
+                viewer_token: "viewer-token-abc".to_string(),
+                detection_enabled: true,
+                target_path: PathBuf::from("./sample.clip"),
+                mode: DetectionMode::Watch,
+                interval_ms: 2_000,
+                debounce_ms: 750,
+                stabilize_ms: 300,
+                resolution: OutputResolution::Source,
+            },
         );
 
         assert_eq!(
             url,
-            "http://192.168.0.23:8787/qr.svg?room=room-illustration"
+            "http://192.168.0.23:8787/qr.svg?room=room-illustration&token=viewer-token-abc"
                 .parse()
                 .expect("QR URL should parse")
         );

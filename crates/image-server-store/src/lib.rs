@@ -40,6 +40,8 @@ impl Default for OutputResolution {
 pub struct RoomRecord {
     pub id: String,
     pub name: String,
+    #[serde(default)]
+    pub viewer_token: String,
     #[serde(default = "default_detection_enabled")]
     pub detection_enabled: bool,
     pub target_path: PathBuf,
@@ -120,6 +122,10 @@ impl RoomStore {
 
     pub fn rooms(&self) -> &[RoomRecord] {
         &self.rooms
+    }
+
+    pub fn rooms_mut(&mut self) -> &mut [RoomRecord] {
+        &mut self.rooms
     }
 
     pub fn version(&self) -> u32 {
@@ -260,6 +266,7 @@ mod tests {
         let replacement = RoomRecord {
             id: "room-a".to_string(),
             name: "Updated Room".to_string(),
+            viewer_token: "viewer-token-updated".to_string(),
             detection_enabled: true,
             target_path: PathBuf::from("./samples/updated.clip"),
             mode: DetectionMode::Watch,
@@ -364,6 +371,7 @@ mod tests {
                 RoomRecord {
                     id: "room-a".to_string(),
                     name: "Room A".to_string(),
+                    viewer_token: "viewer-token-a".to_string(),
                     detection_enabled: true,
                     target_path: PathBuf::from("./samples/a.clip"),
                     mode: DetectionMode::Watch,
@@ -375,6 +383,7 @@ mod tests {
                 RoomRecord {
                     id: "room-a".to_string(),
                     name: "Room A Duplicate".to_string(),
+                    viewer_token: "viewer-token-b".to_string(),
                     detection_enabled: true,
                     target_path: PathBuf::from("./samples/b.clip"),
                     mode: DetectionMode::Interval,
@@ -405,6 +414,7 @@ mod tests {
             rooms: vec![RoomRecord {
                 id: "room-a".to_string(),
                 name: "Room A".to_string(),
+                viewer_token: "viewer-token-a".to_string(),
                 detection_enabled: true,
                 target_path: PathBuf::from("./samples/room-a.clip"),
                 mode: DetectionMode::Interval,

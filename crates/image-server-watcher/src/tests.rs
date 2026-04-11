@@ -172,6 +172,7 @@ fn sample_room(id: &str, target_path: PathBuf, mode: DetectionMode) -> RoomRecor
     RoomRecord {
         id: id.to_string(),
         name: "Room A".to_string(),
+        viewer_token: format!("viewer-token-{id}"),
         detection_enabled: true,
         target_path,
         mode,

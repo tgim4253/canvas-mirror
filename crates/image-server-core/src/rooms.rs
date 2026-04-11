@@ -8,11 +8,15 @@ use crate::{
     persistence::persist_store,
     projection::{room_view, stale_timeout},
     runtime::RoomRuntime,
-    server::{bump_room_revision, push_log, push_low_interval_warning, validate_room, ServerCore},
+    server::{
+        bump_room_revision, ensure_room_viewer_token, push_log, push_low_interval_warning,
+        validate_room, ServerCore,
+    },
 };
 
 impl ServerCore {
-    pub fn create_room(&self, room: RoomRecord) -> Result<RoomDto, CoreError> {
+    pub fn create_room(&self, mut room: RoomRecord) -> Result<RoomDto, CoreError> {
+        ensure_room_viewer_token(&mut room);
         validate_room(&room)?;
         let room_id = room.id.clone();
         let room_name = room.name.clone();
@@ -62,7 +66,8 @@ impl ServerCore {
             .room
             .clone();
 
-        let updated_room = apply_room_update(current_room, update);
+        let mut updated_room = apply_room_update(current_room, update);
+        ensure_room_viewer_token(&mut updated_room);
         validate_room(&updated_room)?;
         let room_for_warning = updated_room.clone();
         let mut next_store = inner.store.clone();

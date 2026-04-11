@@ -9,6 +9,7 @@ use tokio::sync::broadcast;
 
 use crate::{
     error::CoreError,
+    persistence::persist_store,
     runtime::{RoomChangeEvent, RoomRuntime, ServerCoreInner},
 };
 
@@ -21,15 +22,23 @@ pub struct ServerCore {
 
 impl ServerCore {
     pub fn load(config: ServerConfig) -> Result<Self, CoreError> {
-        let store = match RoomStore::load_from_path(&config.store_path) {
+        let mut store = match RoomStore::load_from_path(&config.store_path) {
             Ok(store) => store,
             Err(StoreError::Io(error)) if error.kind() == io::ErrorKind::NotFound => {
                 RoomStore::default()
             }
             Err(error) => return Err(CoreError::Store(error)),
         };
+        let did_backfill_tokens = ensure_store_viewer_tokens(&mut store);
         for room in store.rooms() {
             validate_room(room)?;
+        }
+        if did_backfill_tokens {
+            persist_store(&config.store_path, &store).map_err(|source| {
+                CoreError::StoreMigration {
+                    source: Box::new(source),
+                }
+            })?;
         }
 
         // Bootstrap runtime rooms from the persisted room store snapshot.
@@ -116,6 +125,23 @@ pub(crate) fn validate_room(room: &RoomRecord) -> Result<(), CoreError> {
         });
     }
     Ok(())
+}
+
+pub(crate) fn ensure_room_viewer_token(room: &mut RoomRecord) {
+    if room.viewer_token.trim().is_empty() {
+        room.viewer_token = uuid::Uuid::new_v4().simple().to_string();
+    }
+}
+
+fn ensure_store_viewer_tokens(store: &mut RoomStore) -> bool {
+    let mut did_update = false;
+    for room in store.rooms_mut() {
+        if room.viewer_token.trim().is_empty() {
+            ensure_room_viewer_token(room);
+            did_update = true;
+        }
+    }
+    did_update
 }
 
 pub(crate) fn push_low_interval_warning(inner: &mut ServerCoreInner, room: &RoomRecord) {
