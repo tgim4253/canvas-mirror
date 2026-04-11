@@ -8,16 +8,22 @@ rust-version.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+axum = { workspace = true, features = ["ws"] }
 clap.workspace = true
+futures.workspace = true
+if-addrs.workspace = true
 image-server-config = { path = "../../crates/image-server-config" }
 image-server-core = { path = "../../crates/image-server-core" }
-image-server-preview = { path = "../../crates/image-server-preview" }
 image-server-model = { path = "../../crates/image-server-model" }
+image-server-preview = { path = "../../crates/image-server-preview" }
 image-server-store = { path = "../../crates/image-server-store" }
 image-server-watcher = { path = "../../crates/image-server-watcher" }
+serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 tokio.workspace = true
+url.workspace = true
+uuid.workspace = true
 
 [lints]
 workspace = true

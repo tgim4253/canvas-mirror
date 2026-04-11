@@ -1,7 +1,13 @@
-use std::path::{Path, PathBuf};
+mod transport;
+
+use std::{
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    path::{Path, PathBuf},
+};
 
 use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use if_addrs::get_if_addrs;
 use image_server_config::ServerConfig;
 use image_server_core::{ServerCore, UpdateRoomCommand};
 use image_server_model::{LogEntryDto, LogLevel, RoomDto, RoomState, ServerStatusDto};
@@ -9,7 +15,12 @@ use image_server_preview::PreviewGenerator;
 use image_server_store::{DetectionMode, OutputResolution, RoomRecord};
 use image_server_watcher::{WatcherEvent, WatcherService};
 use sha2::{Digest, Sha256};
-use tokio::{sync::broadcast, task::JoinHandle, time::Duration};
+use tokio::{
+    sync::{broadcast, watch},
+    task::JoinHandle,
+    time::Duration,
+};
+use transport::start_transport_server;
 
 #[derive(Debug, Parser)]
 #[command(name = "image-server-cli")]
@@ -158,8 +169,12 @@ async fn main() -> Result<()> {
 async fn serve(config_path: &Path) -> Result<()> {
     let core = load_core(config_path)?;
     let initial_log_cursor = core.log_cursor();
-    let log_tailer = spawn_runtime_log_tailer(core.clone(), initial_log_cursor);
+    let (log_shutdown_tx, log_shutdown_rx) = watch::channel(false);
+    let log_tailer = spawn_runtime_log_tailer(core.clone(), initial_log_cursor, log_shutdown_rx);
     let config = core.config();
+    let transport = start_transport_server(core.clone(), config.bind_addr)
+        .await
+        .context("failed to start websocket transport")?;
     let watchers = WatcherService::new(core.clone())
         .start()
         .await
@@ -172,9 +187,17 @@ async fn serve(config_path: &Path) -> Result<()> {
     );
     let attached_watchers = watchers.attached_rooms();
     let status = core.status();
+    let viewer_urls = viewer_public_urls(&config);
 
     println!("config: {}", config_path.display());
-    println!("public_url: {}", config.public_url);
+    println!(
+        "public_url: {}",
+        config
+            .public_url
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_else(|| "auto".to_string())
+    );
     println!("store_path: {}", config.store_path.display());
     println!("rooms_loaded: {}", status.rooms.len());
     println!("runtime_ready: true");
@@ -182,34 +205,46 @@ async fn serve(config_path: &Path) -> Result<()> {
     if attached_watchers > 0 {
         println!("watcher_rooms: {}", watchers.room_ids().join(", "));
     }
-    println!("http_ingress_attached: false");
+    println!("ws_transport_attached: true");
+    print_public_urls("viewer_url", "viewer_urls", &viewer_urls);
+    let ws_urls: Vec<String> = viewer_urls.iter().map(ws_public_url).collect();
+    print_string_urls("ws_endpoint", "ws_endpoints", &ws_urls);
     println!("message: press Ctrl-C to stop");
 
     tokio::signal::ctrl_c()
         .await
         .context("failed while waiting for Ctrl-C")?;
 
+    transport.shutdown().await;
     watchers.shutdown().await;
     snapshot_pipeline.abort();
     let _ = snapshot_pipeline.await;
-    log_tailer.abort();
+    let _ = log_shutdown_tx.send(true);
     let _ = log_tailer.await;
     println!("shutdown: received Ctrl-C");
     Ok(())
 }
 
-fn spawn_runtime_log_tailer(core: ServerCore, start_cursor: u64) -> JoinHandle<()> {
+fn spawn_runtime_log_tailer(
+    core: ServerCore,
+    start_cursor: u64,
+    mut shutdown_rx: watch::Receiver<bool>,
+) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut next_cursor = start_cursor;
         let mut ticker = tokio::time::interval(Duration::from_millis(250));
 
         loop {
-            ticker.tick().await;
-            let (cursor, logs) = core.read_logs_since(next_cursor);
-            for log in &logs {
-                print_runtime_log(log);
+            tokio::select! {
+                _ = shutdown_rx.changed() => break,
+                _ = ticker.tick() => {
+                    let (cursor, logs) = core.read_logs_since(next_cursor);
+                    for log in &logs {
+                        print_runtime_log(log);
+                    }
+                    next_cursor = cursor;
+                }
             }
-            next_cursor = cursor;
         }
     })
 }
@@ -239,17 +274,31 @@ fn spawn_snapshot_pipeline(
     preview_generator: PreviewGenerator,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
+        process_all_rooms(&core, &store_path, &preview_generator).await;
+
         loop {
             match events.recv().await {
                 Ok(event) => {
                     process_room_event(&core, &store_path, &preview_generator, &event.room_id)
                         .await;
                 }
-                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(broadcast::error::RecvError::Lagged(_)) => {
+                    process_all_rooms(&core, &store_path, &preview_generator).await;
+                }
                 Err(broadcast::error::RecvError::Closed) => break,
             }
         }
     })
+}
+
+async fn process_all_rooms(
+    core: &ServerCore,
+    store_path: &Path,
+    preview_generator: &PreviewGenerator,
+) {
+    for room in core.room_records() {
+        process_room_event(core, store_path, preview_generator, &room.id).await;
+    }
 }
 
 async fn process_room_event(
@@ -325,6 +374,129 @@ fn hash_bytes(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
     format!("{:x}", hasher.finalize())
+}
+
+fn ws_public_url(public_url: &url::Url) -> String {
+    let mut ws_url = public_url.clone();
+    let scheme = if ws_url.scheme() == "https" {
+        "wss"
+    } else {
+        "ws"
+    };
+    let _ = ws_url.set_scheme(scheme);
+    ws_url.set_path("/ws");
+    ws_url.set_query(None);
+    ws_url.set_fragment(None);
+    ws_url.to_string()
+}
+
+fn viewer_public_urls(config: &ServerConfig) -> Vec<url::Url> {
+    if let Some(public_url) = &config.public_url {
+        return vec![normalize_viewer_url(public_url)];
+    }
+
+    derived_public_urls(config.bind_addr)
+}
+
+fn normalize_viewer_url(public_url: &url::Url) -> url::Url {
+    let mut viewer_url = public_url.clone();
+    viewer_url.set_path("/");
+    viewer_url.set_query(None);
+    viewer_url.set_fragment(None);
+    viewer_url
+}
+
+fn derived_public_urls(bind_addr: SocketAddr) -> Vec<url::Url> {
+    let interface_ips: Vec<IpAddr> = get_if_addrs()
+        .map(|interfaces| {
+            interfaces
+                .into_iter()
+                .map(|interface| interface.ip())
+                .collect()
+        })
+        .unwrap_or_default();
+    derived_public_urls_from_ips(bind_addr, &interface_ips)
+}
+
+fn derived_public_urls_from_ips(bind_addr: SocketAddr, interface_ips: &[IpAddr]) -> Vec<url::Url> {
+    let mut urls = Vec::new();
+    let port = bind_addr.port();
+
+    match bind_addr.ip() {
+        IpAddr::V4(ip) if ip.is_unspecified() => {
+            push_http_url(&mut urls, IpAddr::V4(Ipv4Addr::LOCALHOST), port);
+            let mut pushed_private = false;
+            for ip in interface_ips {
+                if matches!(ip, IpAddr::V4(v4) if v4.is_private()) {
+                    push_http_url(&mut urls, *ip, port);
+                    pushed_private = true;
+                }
+            }
+            if !pushed_private {
+                for ip in interface_ips {
+                    if matches!(ip, IpAddr::V4(v4) if !v4.is_loopback()) {
+                        push_http_url(&mut urls, *ip, port);
+                    }
+                }
+            }
+        }
+        IpAddr::V6(ip) if ip.is_unspecified() => {
+            push_http_url(&mut urls, IpAddr::V4(Ipv4Addr::LOCALHOST), port);
+            let mut pushed_private = false;
+            for ip in interface_ips {
+                if matches!(ip, IpAddr::V4(v4) if v4.is_private()) {
+                    push_http_url(&mut urls, *ip, port);
+                    pushed_private = true;
+                }
+            }
+            if !pushed_private {
+                for ip in interface_ips {
+                    if matches!(ip, IpAddr::V4(v4) if !v4.is_loopback()) {
+                        push_http_url(&mut urls, *ip, port);
+                    }
+                }
+            }
+        }
+        ip => push_http_url(&mut urls, ip, port),
+    }
+
+    if urls.is_empty() {
+        push_http_url(&mut urls, IpAddr::V4(Ipv4Addr::LOCALHOST), port);
+    }
+
+    urls
+}
+
+fn push_http_url(urls: &mut Vec<url::Url>, ip: IpAddr, port: u16) {
+    let raw = match ip {
+        IpAddr::V4(ip) => format!("http://{ip}:{port}"),
+        IpAddr::V6(ip) => format!("http://[{ip}]:{port}"),
+    };
+
+    let Ok(url) = raw.parse::<url::Url>() else {
+        return;
+    };
+    if !urls.iter().any(|existing| existing == &url) {
+        urls.push(url);
+    }
+}
+
+fn print_public_urls(single_label: &str, multi_label: &str, urls: &[url::Url]) {
+    let rendered: Vec<String> = urls.iter().map(ToString::to_string).collect();
+    print_string_urls(single_label, multi_label, &rendered);
+}
+
+fn print_string_urls(single_label: &str, multi_label: &str, urls: &[String]) {
+    match urls {
+        [] => println!("{single_label}: none"),
+        [url] => println!("{single_label}: {url}"),
+        _ => {
+            println!("{multi_label}:");
+            for url in urls {
+                println!("- {url}");
+            }
+        }
+    }
 }
 
 fn resolve_target_path(store_path: &Path, target_path: &Path) -> PathBuf {
@@ -449,7 +621,14 @@ fn print_status(status: &ServerStatusDto, json: bool) -> Result<()> {
         return Ok(());
     }
 
-    println!("public_url: {}", status.public_url);
+    println!(
+        "public_url: {}",
+        status
+            .public_url
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_else(|| "auto".to_string())
+    );
     println!("generated_at: {}", status.generated_at.to_rfc3339());
     println!("rooms: {}", status.rooms.len());
     println!("logs: {}", status.logs.len());
@@ -596,5 +775,83 @@ mod tests {
         assert!(error
             .to_string()
             .contains("only valid with --resolution contain"));
+    }
+
+    #[test]
+    fn ws_public_url_uses_websocket_scheme() {
+        let public_url = "http://127.0.0.1:8787"
+            .parse()
+            .expect("sample URL should parse");
+
+        assert_eq!(ws_public_url(&public_url), "ws://127.0.0.1:8787/ws");
+    }
+
+    #[test]
+    fn viewer_public_urls_use_explicit_public_url_when_present() {
+        let config = ServerConfig {
+            public_url: Some(
+                "https://example.local:9000/base"
+                    .parse()
+                    .expect("sample URL should parse"),
+            ),
+            ..ServerConfig::default()
+        };
+
+        assert_eq!(
+            viewer_public_urls(&config),
+            vec!["https://example.local:9000/"
+                .parse()
+                .expect("normalized viewer URL should parse")]
+        );
+    }
+
+    #[test]
+    fn derived_public_urls_include_localhost_and_private_ipv4_for_wildcard_bind() {
+        let urls = derived_public_urls_from_ips(
+            SocketAddr::from(([0, 0, 0, 0], 8787)),
+            &[
+                IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+                IpAddr::V4(Ipv4Addr::new(192, 168, 0, 23)),
+                IpAddr::V4(Ipv4Addr::new(10, 0, 0, 14)),
+            ],
+        );
+
+        assert_eq!(
+            urls,
+            vec![
+                "http://127.0.0.1:8787"
+                    .parse()
+                    .expect("localhost URL should parse"),
+                "http://192.168.0.23:8787"
+                    .parse()
+                    .expect("private URL should parse"),
+                "http://10.0.0.14:8787"
+                    .parse()
+                    .expect("private URL should parse"),
+            ]
+        );
+    }
+
+    #[test]
+    fn derived_public_urls_fall_back_to_non_loopback_ipv4_when_no_private_ip_exists() {
+        let urls = derived_public_urls_from_ips(
+            SocketAddr::from(([0, 0, 0, 0], 8787)),
+            &[
+                IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+                IpAddr::V4(Ipv4Addr::new(110, 76, 78, 33)),
+            ],
+        );
+
+        assert_eq!(
+            urls,
+            vec![
+                "http://127.0.0.1:8787"
+                    .parse()
+                    .expect("localhost URL should parse"),
+                "http://110.76.78.33:8787"
+                    .parse()
+                    .expect("public fallback URL should parse"),
+            ]
+        );
     }
 }

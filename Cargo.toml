@@ -26,6 +26,7 @@ chrono = { version = "0.4", features = ["clock", "serde"] }
 clap = { version = "4", features = ["derive", "env"] }
 clip2preview = "0.1"
 futures = "0.3"
+if-addrs = "0.13"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 indexmap = { version = "2", features = ["serde"] }
 mime_guess = "2"
