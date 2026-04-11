@@ -1,0 +1,918 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <title>Canvas Mirror Viewer</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #131313;
+      --canvas: #0e0e0e;
+      --surface: rgba(23, 23, 23, 0.62);
+      --button: rgba(57, 57, 57, 0.6);
+      --button-active: #f2f2f2;
+      --fg: rgba(255, 255, 255, 0.94);
+      --muted: rgba(255, 255, 255, 0.64);
+      --shadow: 0 8px 30px rgba(0, 0, 0, 0.22);
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--bg);
+      touch-action: manipulation;
+    }
+
+    body {
+      position: relative;
+      font: 16px/1.4 "SF Pro Display", "SF Pro Text", "Apple SD Gothic Neo", "Pretendard", sans-serif;
+      color: var(--fg);
+      background:
+        radial-gradient(circle at 50% -4%, rgba(255, 255, 255, 0.06), transparent 34%),
+        radial-gradient(circle at 50% 108%, rgba(255, 255, 255, 0.05), transparent 28%),
+        var(--bg);
+    }
+
+    .viewer {
+      position: fixed;
+      inset: 0;
+      overflow: hidden;
+      background: var(--canvas);
+      touch-action: none;
+    }
+
+    #preview {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: none;
+      object-fit: contain;
+      transform-origin: center center;
+      transform:
+        translate3d(var(--pan-x, 0px), var(--pan-y, 0px), 0)
+        rotate(var(--rotation, 0deg))
+        scale(var(--scale, 1))
+        scaleX(var(--mirror, 1));
+      filter: var(--image-filter, none);
+      transition:
+        transform 180ms ease,
+        filter 180ms ease,
+        object-fit 180ms ease,
+        opacity 220ms ease;
+      will-change: transform, filter;
+      background: var(--canvas);
+      z-index: 0;
+    }
+
+    #preview.is-visible {
+      display: block;
+    }
+
+    #preview.is-gesturing {
+      transition: none;
+    }
+
+    #message {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 32px;
+      text-align: center;
+      color: var(--muted);
+      letter-spacing: 0.02em;
+      z-index: 3;
+      pointer-events: none;
+    }
+
+    #message span {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 52px;
+      padding: 14px 20px;
+      border-radius: 999px;
+      background: rgba(17, 17, 17, 0.54);
+      backdrop-filter: blur(18px);
+      box-shadow: var(--shadow);
+    }
+
+    .chrome {
+      position: fixed;
+      inset: 0;
+      z-index: 4;
+      pointer-events: none;
+    }
+
+    .side-stack {
+      position: absolute;
+      top: calc(var(--safe-top) + 32px);
+      right: calc(var(--safe-right) + 20px);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      pointer-events: auto;
+      transition:
+        opacity 180ms ease,
+        transform 220ms ease;
+    }
+
+    .bottom-toolbar {
+      position: absolute;
+      left: 50%;
+      bottom: calc(var(--safe-bottom) + 28px);
+      transform: translate(-50%, 0);
+      display: inline-flex;
+      align-items: center;
+      gap: 16px;
+      padding: 12px 20px;
+      border-radius: 999px;
+      background: var(--surface);
+      backdrop-filter: blur(18px);
+      box-shadow: var(--shadow);
+      pointer-events: auto;
+      transition:
+        opacity 180ms ease,
+        transform 220ms ease;
+    }
+
+    .control-button {
+      width: 48px;
+      height: 48px;
+      border: 0;
+      padding: 0;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255, 255, 255, 0.94);
+      background: var(--button);
+      backdrop-filter: blur(12px);
+      box-shadow: 0 10px 18px rgba(0, 0, 0, 0.12);
+      cursor: pointer;
+      transition:
+        transform 120ms ease,
+        background-color 120ms ease,
+        color 120ms ease,
+        opacity 140ms ease;
+    }
+
+    .bottom-toolbar .control-button {
+      width: 44px;
+      height: 44px;
+      background: transparent;
+      box-shadow: none;
+    }
+
+    .control-button.is-active {
+      background: var(--button-active);
+      color: #111111;
+    }
+
+    .control-button:disabled {
+      opacity: 0.42;
+      cursor: default;
+    }
+
+    .bottom-toolbar .control-button.is-pressed {
+      background: rgba(255, 255, 255, 0.18);
+      color: #ffffff;
+    }
+
+    .control-button:active {
+      transform: scale(0.96);
+    }
+
+    .control-button svg {
+      width: 20px;
+      height: 20px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 1.9;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .control-button.icon-fill svg.fill {
+      fill: currentColor;
+      stroke: none;
+    }
+
+    body.controls-hidden .bottom-toolbar,
+    body.controls-hidden .side-stack {
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(8px);
+    }
+
+    body.controls-hidden .bottom-toolbar {
+      transform: translate(-50%, 10px);
+    }
+
+    @media (max-width: 720px) {
+      .side-stack {
+        top: calc(var(--safe-top) + 22px);
+        right: calc(var(--safe-right) + 16px);
+        gap: 12px;
+      }
+
+      .bottom-toolbar {
+        bottom: calc(var(--safe-bottom) + 22px);
+        gap: 12px;
+        padding: 10px 16px;
+      }
+
+      .control-button {
+        width: 44px;
+        height: 44px;
+      }
+
+      .bottom-toolbar .control-button {
+        width: 40px;
+        height: 40px;
+      }
+    }
+  </style>
+</head>
+<body class="controls-visible">
+  <main class="viewer">
+    <img id="preview" alt="latest room preview" />
+    <div id="message"><span>Connecting...</span></div>
+
+    <div class="chrome">
+      <aside class="side-stack" aria-label="viewer controls">
+        <button id="toggleHud" class="control-button primary" type="button" aria-label="Hide controls" title="Hide controls">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="6.5" y="10.25" width="11" height="8.5" rx="2.25"></rect>
+            <path d="M9.25 10.25V8.75a2.75 2.75 0 0 1 5.5 0v1.5"></path>
+          </svg>
+        </button>
+        <button id="connectionToggle" class="control-button secondary" type="button" aria-label="Reconnect" title="Reconnect">
+          <svg id="connectionLinkedIcon" viewBox="0 0 20 20" aria-hidden="true">
+            <g clip-path="url(#clip-connection-linked)">
+              <path d="M7.19296 14.0351H5.43858C4.27535 14.0351 3.15976 13.573 2.33723 12.7505C1.51471 11.928 1.05261 10.8124 1.05261 9.64915C1.05261 8.48592 1.51471 7.37033 2.33723 6.5478C3.15976 5.72528 4.27535 5.26318 5.43858 5.26318H7.19296M12.4561 5.26318H14.2105C15.3738 5.26318 16.4894 5.72528 17.3119 6.5478C18.1344 7.37033 18.5965 8.48592 18.5965 9.64915C18.5965 10.8124 18.1344 11.928 17.3119 12.7505C16.4894 13.573 15.3738 14.0351 14.2105 14.0351H12.4561M6.31577 9.64915H13.3333"></path>
+            </g>
+            <defs>
+              <clipPath id="clip-connection-linked">
+                <rect width="20" height="11.5789" transform="translate(0 4.21045)"></rect>
+              </clipPath>
+            </defs>
+          </svg>
+          <svg id="connectionBrokenIcon" viewBox="0 0 20 20" aria-hidden="true" style="display: none;">
+            <g clip-path="url(#clip-connection-broken)">
+              <path d="M7.19296 14.2106H5.43858C4.27535 14.2106 3.15976 13.7485 2.33723 12.926C1.51471 12.1035 1.05261 10.9879 1.05261 9.82466C1.05261 8.66143 1.51471 7.54585 2.33723 6.72331C3.15976 5.90079 4.27535 5.4387 5.43858 5.4387M12.4561 5.4387H14.2105C15.025 5.4387 15.8235 5.66551 16.5163 6.09373C17.2092 6.52197 17.7691 7.13467 18.1335 7.8632C18.4977 8.59173 18.6519 9.40731 18.5787 10.2185C18.5056 11.0298 18.208 11.8046 17.7192 12.4562M6.31577 9.82466H9.82454M1.05261 1.05273L18.5965 18.5966"></path>
+            </g>
+            <defs>
+              <clipPath id="clip-connection-broken">
+                <rect width="20" height="20"></rect>
+              </clipPath>
+            </defs>
+          </svg>
+        </button>
+        <button id="fullscreenToggle" class="control-button secondary" type="button" aria-label="Enter fullscreen" title="Enter fullscreen">
+          <svg id="fullscreenEnterIcon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 4H4v5"></path>
+            <path d="M15 4h5v5"></path>
+            <path d="M20 15v5h-5"></path>
+            <path d="M4 15v5h5"></path>
+          </svg>
+          <svg id="fullscreenExitIcon" viewBox="0 0 24 24" aria-hidden="true" style="display: none;">
+            <path d="M9 4v5H4"></path>
+            <path d="M15 4v5h5"></path>
+            <path d="M20 15h-5v5"></path>
+            <path d="M4 15h5v5"></path>
+          </svg>
+        </button>
+      </aside>
+
+      <div class="bottom-toolbar" aria-label="image controls">
+        <button id="mirrorToggle" class="control-button" type="button" aria-label="Mirror image" title="Mirror image">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 4v16"></path>
+            <path d="M9 7L5 12l4 5"></path>
+            <path d="M15 7l4 5-4 5"></path>
+          </svg>
+        </button>
+        <button id="rotateImage" class="control-button" type="button" aria-label="Rotate image" title="Rotate 90°">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M19 12a7 7 0 1 1-2.05-4.95"></path>
+            <path d="M19 5v5h-5"></path>
+          </svg>
+        </button>
+        <button id="resetRotation" class="control-button" type="button" aria-label="Reset rotation" title="Reset rotation" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M10.1 2.18c1.255-.245 2.545-.245 3.8 0"></path>
+            <path d="M17.6 3.71c1.062.718 1.975 1.635 2.69 2.7"></path>
+            <path d="M21.82 10.1c.244 1.255.244 2.545 0 3.8"></path>
+            <path d="M20.29 17.6c-.718 1.062-1.635 1.976-2.7 2.69"></path>
+            <path d="M13.9 21.82c-1.255.244-2.545.244-3.8 0"></path>
+            <path d="M6.4 20.29c-1.062-.718-1.976-1.635-2.69-2.7"></path>
+            <path d="M2.18 13.9a9.69 9.69 0 0 1 0-3.8"></path>
+            <path d="M3.71 6.4c.718-1.062 1.635-1.976 2.7-2.69"></path>
+            <path d="M13 12a1 1 0 1 1-2 0a1 1 0 0 1 2 0Z"></path>
+          </svg>
+        </button>
+        <button id="toggleFit" class="control-button" type="button" aria-label="Fit image" title="Fit image">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M8 4H4v4"></path>
+            <path d="M16 4h4v4"></path>
+            <path d="M20 16v4h-4"></path>
+            <path d="M4 16v4h4"></path>
+          </svg>
+        </button>
+        <button id="toggleGrayscale" class="control-button is-active" type="button" aria-label="Toggle grayscale filter" title="Toggle grayscale">
+          <svg class="fill" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 3a9 9 0 1 0 0 18V3z"></path>
+            <path d="M12 3a9 9 0 0 1 0 18"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const HUD_AUTO_HIDE_MS = 2800;
+    const viewer = document.querySelector(".viewer");
+    const preview = document.getElementById("preview");
+    const message = document.getElementById("message");
+    const toggleHudButton = document.getElementById("toggleHud");
+    const connectionToggleButton = document.getElementById("connectionToggle");
+    const connectionLinkedIcon = document.getElementById("connectionLinkedIcon");
+    const connectionBrokenIcon = document.getElementById("connectionBrokenIcon");
+    const fullscreenToggleButton = document.getElementById("fullscreenToggle");
+    const fullscreenEnterIcon = document.getElementById("fullscreenEnterIcon");
+    const fullscreenExitIcon = document.getElementById("fullscreenExitIcon");
+    const mirrorToggleButton = document.getElementById("mirrorToggle");
+    const rotateImageButton = document.getElementById("rotateImage");
+    const resetRotationButton = document.getElementById("resetRotation");
+    const toggleFitButton = document.getElementById("toggleFit");
+    const toggleGrayscaleButton = document.getElementById("toggleGrayscale");
+    const searchParams = new URLSearchParams(window.location.search);
+    const roomId = searchParams.get("room")?.trim() || "";
+    const roomToken = searchParams.get("token")?.trim() || "";
+
+    let socket = null;
+    let pendingSnapshotMeta = null;
+    let currentSnapshotMeta = null;
+    let currentBlobUrl = null;
+    let manualDisconnect = false;
+    let reconnectTimer = null;
+    let hudTimer = null;
+    let isConnected = false;
+    let gesture = null;
+    let viewStateFrame = null;
+
+    const viewState = {
+      rotation: 0,
+      mirrored: false,
+      grayscale: false,
+      zoom: 1,
+      panX: 0,
+      panY: 0,
+      hudHidden: false,
+    };
+
+    function setMessage(text) {
+      message.querySelector("span").textContent = text;
+      message.style.display = "grid";
+    }
+
+    function hideMessage() {
+      message.style.display = "none";
+    }
+
+    function clearHudTimer() {
+      if (hudTimer) {
+        window.clearTimeout(hudTimer);
+        hudTimer = null;
+      }
+    }
+
+    function scheduleHudAutoHide() {
+      clearHudTimer();
+      if (!preview.classList.contains("is-visible")) {
+        return;
+      }
+      hudTimer = window.setTimeout(() => {
+        viewState.hudHidden = true;
+        applyViewState();
+      }, HUD_AUTO_HIDE_MS);
+    }
+
+    function showHud() {
+      viewState.hudHidden = false;
+      applyViewState();
+      scheduleHudAutoHide();
+    }
+
+    function hideHud() {
+      clearHudTimer();
+      viewState.hudHidden = true;
+      applyViewState();
+    }
+
+    function showImage(blob) {
+      if (currentBlobUrl) {
+        URL.revokeObjectURL(currentBlobUrl);
+      }
+      currentBlobUrl = URL.createObjectURL(blob);
+      preview.src = currentBlobUrl;
+      preview.onload = () => {
+        applyViewState();
+        scheduleHudAutoHide();
+      };
+      preview.classList.add("is-visible");
+      hideMessage();
+    }
+
+    function normalizedRotation() {
+      return ((viewState.rotation % 360) + 360) % 360;
+    }
+
+    function currentImageSize() {
+      if (currentSnapshotMeta?.width && currentSnapshotMeta?.height) {
+        return {
+          width: currentSnapshotMeta.width,
+          height: currentSnapshotMeta.height,
+        };
+      }
+
+      if (preview.naturalWidth && preview.naturalHeight) {
+        return {
+          width: preview.naturalWidth,
+          height: preview.naturalHeight,
+        };
+      }
+
+      return null;
+    }
+
+    function fitScaleForRotation() {
+      const imageSize = currentImageSize();
+      if (!imageSize) {
+        return 1;
+      }
+
+      const viewportWidth = viewer.clientWidth;
+      const viewportHeight = viewer.clientHeight;
+      if (!viewportWidth || !viewportHeight) {
+        return 1;
+      }
+
+      const baseContainScale = Math.min(
+        viewportWidth / imageSize.width,
+        viewportHeight / imageSize.height
+      );
+      const renderedWidth = imageSize.width * baseContainScale;
+      const renderedHeight = imageSize.height * baseContainScale;
+      const radians = normalizedRotation() * (Math.PI / 180);
+      const rotatedWidth =
+        Math.abs(renderedWidth * Math.cos(radians)) +
+        Math.abs(renderedHeight * Math.sin(radians));
+      const rotatedHeight =
+        Math.abs(renderedWidth * Math.sin(radians)) +
+        Math.abs(renderedHeight * Math.cos(radians));
+
+      return Math.min(viewportWidth / rotatedWidth, viewportHeight / rotatedHeight);
+    }
+
+    function applyViewStateNow() {
+      const fitScale = fitScaleForRotation();
+      preview.style.setProperty("--rotation", `${viewState.rotation}deg`);
+      preview.style.setProperty("--mirror", viewState.mirrored ? "-1" : "1");
+      preview.style.setProperty("--image-filter", viewState.grayscale ? "grayscale(1)" : "none");
+      preview.style.setProperty("--scale", String(fitScale * viewState.zoom));
+      preview.style.setProperty("--pan-x", `${viewState.panX}px`);
+      preview.style.setProperty("--pan-y", `${viewState.panY}px`);
+      preview.style.objectFit = "contain";
+
+      document.body.classList.toggle("controls-hidden", viewState.hudHidden);
+      mirrorToggleButton.classList.toggle("is-active", viewState.mirrored);
+      resetRotationButton.disabled = normalizedRotation() === 0;
+      toggleGrayscaleButton.classList.toggle("is-active", viewState.grayscale);
+
+      toggleHudButton.setAttribute("aria-label", viewState.hudHidden ? "Show controls" : "Hide controls");
+      toggleHudButton.setAttribute("title", viewState.hudHidden ? "Show controls" : "Hide controls");
+    }
+
+    function applyViewState() {
+      if (viewStateFrame !== null) {
+        return;
+      }
+
+      viewStateFrame = window.requestAnimationFrame(() => {
+        viewStateFrame = null;
+        applyViewStateNow();
+      });
+    }
+
+    function setGestureActive(active) {
+      preview.classList.toggle("is-gesturing", active);
+    }
+
+    function pulseButton(button) {
+      button.classList.add("is-pressed");
+      window.setTimeout(() => {
+        button.classList.remove("is-pressed");
+      }, 180);
+    }
+
+    function setConnectionState(connected) {
+      isConnected = connected;
+      connectionLinkedIcon.style.display = connected ? "block" : "none";
+      connectionBrokenIcon.style.display = connected ? "none" : "block";
+      connectionToggleButton.setAttribute("aria-label", connected ? "Disconnect" : "Reconnect");
+      connectionToggleButton.setAttribute("title", connected ? "Disconnect" : "Reconnect");
+    }
+
+    function setFullscreenState(active) {
+      fullscreenToggleButton.classList.toggle("is-active", active);
+      fullscreenEnterIcon.style.display = active ? "none" : "block";
+      fullscreenExitIcon.style.display = active ? "block" : "none";
+      fullscreenToggleButton.setAttribute("aria-label", active ? "Exit fullscreen" : "Enter fullscreen");
+      fullscreenToggleButton.setAttribute("title", active ? "Exit fullscreen" : "Enter fullscreen");
+    }
+
+    function isFullscreen() {
+      return document.fullscreenElement === document.documentElement;
+    }
+
+    async function toggleFullscreen() {
+      try {
+        if (isFullscreen()) {
+          await document.exitFullscreen();
+        } else {
+          await document.documentElement.requestFullscreen();
+        }
+      } catch (_) {
+        return;
+      }
+      scheduleHudAutoHide();
+    }
+
+    function clampZoom(value) {
+      return Math.min(5, Math.max(1, value));
+    }
+
+    function isControlTarget(target) {
+      return !!target.closest(".control-button");
+    }
+
+    function touchDistance(touches) {
+      const dx = touches[0].clientX - touches[1].clientX;
+      const dy = touches[0].clientY - touches[1].clientY;
+      return Math.hypot(dx, dy);
+    }
+
+    function touchMidpoint(touches) {
+      return {
+        x: (touches[0].clientX + touches[1].clientX) / 2,
+        y: (touches[0].clientY + touches[1].clientY) / 2,
+      };
+    }
+
+    function touchAngle(touches) {
+      const dx = touches[1].clientX - touches[0].clientX;
+      const dy = touches[1].clientY - touches[0].clientY;
+      return (Math.atan2(dy, dx) * 180) / Math.PI;
+    }
+
+    function angleDeltaDegrees(currentAngle, startAngle) {
+      let delta = currentAngle - startAngle;
+      while (delta > 180) {
+        delta -= 360;
+      }
+      while (delta < -180) {
+        delta += 360;
+      }
+      return delta;
+    }
+
+    function startPanFromTouch(touch) {
+      hideHud();
+      setGestureActive(true);
+      gesture = {
+        mode: "pan",
+        startX: touch.clientX,
+        startY: touch.clientY,
+        startPanX: viewState.panX,
+        startPanY: viewState.panY,
+      };
+    }
+
+    function handleTouchStart(event) {
+      if (isControlTarget(event.target)) {
+        return;
+      }
+
+      if (event.touches.length === 2) {
+        event.preventDefault();
+        hideHud();
+        setGestureActive(true);
+        gesture = {
+          mode: "pinch",
+          startZoom: viewState.zoom,
+          startRotation: viewState.rotation,
+          startPanX: viewState.panX,
+          startPanY: viewState.panY,
+          startDistance: touchDistance(event.touches),
+          startMidpoint: touchMidpoint(event.touches),
+          startAngle: touchAngle(event.touches),
+        };
+        return;
+      }
+
+      if (event.touches.length === 1 && viewState.zoom > 1) {
+        event.preventDefault();
+        startPanFromTouch(event.touches[0]);
+      }
+
+      if (viewState.hudHidden) {
+        showHud();
+      } else {
+        scheduleHudAutoHide();
+      }
+    }
+
+    function handleTouchMove(event) {
+      if (!gesture || isControlTarget(event.target)) {
+        return;
+      }
+
+      if (gesture.mode === "pinch" && event.touches.length >= 2) {
+        event.preventDefault();
+        const nextZoom = clampZoom(
+          gesture.startZoom * (touchDistance(event.touches) / gesture.startDistance)
+        );
+        const midpoint = touchMidpoint(event.touches);
+        const nextRotation =
+          gesture.startRotation +
+          angleDeltaDegrees(touchAngle(event.touches), gesture.startAngle);
+        viewState.zoom = nextZoom;
+        viewState.rotation = nextRotation;
+        viewState.panX = gesture.startPanX + (midpoint.x - gesture.startMidpoint.x);
+        viewState.panY = gesture.startPanY + (midpoint.y - gesture.startMidpoint.y);
+        applyViewState();
+        return;
+      }
+
+      if (gesture.mode === "pan" && event.touches.length === 1) {
+        event.preventDefault();
+        viewState.panX = gesture.startPanX + (event.touches[0].clientX - gesture.startX);
+        viewState.panY = gesture.startPanY + (event.touches[0].clientY - gesture.startY);
+        applyViewState();
+      }
+    }
+
+    function handleTouchEnd(event) {
+      if (gesture?.mode === "pinch" && event.touches.length === 1 && viewState.zoom > 1) {
+        startPanFromTouch(event.touches[0]);
+        return;
+      }
+
+      if (gesture?.mode === "pan" && event.touches.length === 1 && viewState.zoom > 1) {
+        startPanFromTouch(event.touches[0]);
+        return;
+      }
+
+      if (viewState.zoom <= 1) {
+        viewState.zoom = 1;
+        viewState.panX = 0;
+        viewState.panY = 0;
+        applyViewState();
+      }
+
+      if (event.touches.length === 0) {
+        gesture = null;
+        setGestureActive(false);
+        scheduleHudAutoHide();
+      }
+    }
+
+    function clearReconnectTimer() {
+      if (reconnectTimer) {
+        window.clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+    }
+
+    function closeSocket() {
+      if (!socket) {
+        return;
+      }
+      socket.close();
+      socket = null;
+    }
+
+    function scheduleReconnect(delayMs = 180) {
+      clearReconnectTimer();
+      reconnectTimer = window.setTimeout(() => {
+        reconnectTimer = null;
+        connect();
+      }, delayMs);
+    }
+
+    function disconnect(manual = false) {
+      manualDisconnect = manual;
+      clearReconnectTimer();
+      clearHudTimer();
+      pendingSnapshotMeta = null;
+      closeSocket();
+      setConnectionState(false);
+      if (manual && !preview.src) {
+        setMessage("Disconnected.");
+      }
+    }
+
+    function connect() {
+      if (!roomId || !roomToken) {
+        setMessage("Invalid room link.");
+        return;
+      }
+
+      if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+        return;
+      }
+
+      manualDisconnect = false;
+      clearReconnectTimer();
+      const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
+      socket = new WebSocket(wsUrl);
+      setConnectionState(false);
+      if (!preview.src) {
+        setMessage("Connecting...");
+      }
+
+      socket.addEventListener("open", () => {
+        socket.send(JSON.stringify({
+          type: "hello",
+          room_id: roomId,
+          token: roomToken,
+          name: "Browser Viewer",
+          platform: "desktop",
+          screen_width: window.innerWidth,
+          screen_height: window.innerHeight
+        }));
+      });
+
+      socket.addEventListener("message", (event) => {
+        if (event.data instanceof Blob) {
+          if (!pendingSnapshotMeta) {
+            return;
+          }
+          currentSnapshotMeta = pendingSnapshotMeta;
+          showImage(event.data);
+          pendingSnapshotMeta = null;
+          return;
+        }
+
+        const payload = JSON.parse(event.data);
+
+        if (payload.type === "joined") {
+          setConnectionState(true);
+          if (!preview.src) {
+            setMessage(`Waiting for ${payload.room_id}...`);
+          }
+          return;
+        }
+
+        if (payload.type === "snapshot_meta") {
+          pendingSnapshotMeta = payload.meta;
+          return;
+        }
+
+        if (payload.type === "error") {
+          setMessage(payload.message);
+        }
+      });
+
+      socket.addEventListener("close", () => {
+        socket = null;
+        setConnectionState(false);
+        if (manualDisconnect) {
+          if (!preview.src) {
+            setMessage("Disconnected.");
+          }
+          return;
+        }
+
+        if (!preview.src) {
+          setMessage("Connection closed.");
+        }
+      });
+
+      socket.addEventListener("error", () => {
+        setConnectionState(false);
+        if (!preview.src) {
+          setMessage("Connection error.");
+        }
+      });
+    }
+
+    toggleHudButton.addEventListener("click", () => {
+      if (viewState.hudHidden) {
+        showHud();
+      } else {
+        hideHud();
+      }
+    });
+
+    connectionToggleButton.addEventListener("click", () => {
+      if (isConnected || (socket && socket.readyState === WebSocket.CONNECTING)) {
+        disconnect(true);
+        return;
+      }
+      disconnect(false);
+      scheduleReconnect();
+      scheduleHudAutoHide();
+    });
+
+    fullscreenToggleButton.addEventListener("click", () => {
+      toggleFullscreen();
+    });
+
+    mirrorToggleButton.addEventListener("click", () => {
+      viewState.mirrored = !viewState.mirrored;
+      applyViewState();
+      scheduleHudAutoHide();
+    });
+
+    rotateImageButton.addEventListener("click", () => {
+      viewState.rotation += 90;
+      applyViewState();
+      scheduleHudAutoHide();
+    });
+
+    resetRotationButton.addEventListener("click", () => {
+      if (normalizedRotation() === 0) {
+        return;
+      }
+      viewState.rotation = 0;
+      pulseButton(resetRotationButton);
+      applyViewState();
+      scheduleHudAutoHide();
+    });
+
+    toggleFitButton.addEventListener("click", () => {
+      viewState.zoom = 1;
+      viewState.panX = 0;
+      viewState.panY = 0;
+      pulseButton(toggleFitButton);
+      applyViewState();
+      scheduleHudAutoHide();
+    });
+
+    toggleGrayscaleButton.addEventListener("click", () => {
+      viewState.grayscale = !viewState.grayscale;
+      applyViewState();
+      scheduleHudAutoHide();
+    });
+
+    window.addEventListener("beforeunload", () => {
+      disconnect(true);
+      if (currentBlobUrl) {
+        URL.revokeObjectURL(currentBlobUrl);
+      }
+    });
+    document.addEventListener("fullscreenchange", () => {
+      setFullscreenState(isFullscreen());
+      scheduleHudAutoHide();
+    });
+    window.addEventListener("resize", applyViewState);
+    viewer.addEventListener("click", (event) => {
+      if (isControlTarget(event.target)) {
+        return;
+      }
+      if (viewState.hudHidden) {
+        showHud();
+      } else {
+        scheduleHudAutoHide();
+      }
+    });
+
+    viewer.addEventListener("touchstart", handleTouchStart, { passive: false });
+    viewer.addEventListener("touchmove", handleTouchMove, { passive: false });
+    viewer.addEventListener("touchend", handleTouchEnd, { passive: false });
+    viewer.addEventListener("touchcancel", handleTouchEnd, { passive: false });
+
+    applyViewState();
+    setConnectionState(false);
+    setFullscreenState(false);
+    connect();
+  </script>
+</body>
+</html>

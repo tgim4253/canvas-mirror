@@ -1,0 +1,22 @@
+[package]
+name = "canvas-mirror-watcher"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+canvas-mirror-core = { path = "../canvas-mirror-core" }
+canvas-mirror-model = { path = "../canvas-mirror-model" }
+canvas-mirror-store = { path = "../canvas-mirror-store" }
+notify.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+canvas-mirror-config = { path = "../canvas-mirror-config" }
+tempfile.workspace = true
+
+[lints]
+workspace = true

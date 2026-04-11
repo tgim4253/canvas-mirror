@@ -1,0 +1,17 @@
+[package]
+name = "canvas-mirror-model"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+chrono.workspace = true
+canvas-mirror-store = { path = "../canvas-mirror-store" }
+serde.workspace = true
+serde_json.workspace = true
+url.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,20 @@
+[package]
+name = "canvas-mirror-preview"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+clip2preview.workspace = true
+image.workspace = true
+canvas-mirror-store = { path = "../canvas-mirror-store" }
+thiserror.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

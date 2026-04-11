@@ -1,4 +1,0 @@
-version = 1
-bind_addr = "0.0.0.0:8787"
-stale_timeout_ms = 30000
-store_path = "./image-server-store.toml"

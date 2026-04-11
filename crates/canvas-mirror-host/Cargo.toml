@@ -1,0 +1,28 @@
+[package]
+name = "canvas-mirror-host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+axum = { workspace = true, features = ["ws"] }
+futures.workspace = true
+if-addrs.workspace = true
+canvas-mirror-config = { path = "../canvas-mirror-config" }
+canvas-mirror-core = { path = "../canvas-mirror-core" }
+canvas-mirror-model = { path = "../canvas-mirror-model" }
+canvas-mirror-preview = { path = "../canvas-mirror-preview" }
+canvas-mirror-store = { path = "../canvas-mirror-store" }
+canvas-mirror-watcher = { path = "../canvas-mirror-watcher" }
+qrcode-generator.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+url.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

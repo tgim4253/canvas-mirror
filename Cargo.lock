@@ -204,6 +204,124 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
 
 [[package]]
+name = "canvas-mirror"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "canvas-mirror-config",
+ "canvas-mirror-core",
+ "canvas-mirror-host",
+ "canvas-mirror-model",
+ "canvas-mirror-store",
+ "canvas-mirror-watcher",
+ "clap",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "canvas-mirror-config"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "toml",
+ "url",
+]
+
+[[package]]
+name = "canvas-mirror-core"
+version = "0.1.0"
+dependencies = [
+ "canvas-mirror-config",
+ "canvas-mirror-model",
+ "canvas-mirror-store",
+ "chrono",
+ "indexmap",
+ "parking_lot",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "canvas-mirror-host"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "canvas-mirror-config",
+ "canvas-mirror-core",
+ "canvas-mirror-model",
+ "canvas-mirror-preview",
+ "canvas-mirror-store",
+ "canvas-mirror-watcher",
+ "futures",
+ "if-addrs",
+ "qrcode-generator",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "canvas-mirror-model"
+version = "0.1.0"
+dependencies = [
+ "canvas-mirror-store",
+ "chrono",
+ "serde",
+ "serde_json",
+ "url",
+]
+
+[[package]]
+name = "canvas-mirror-preview"
+version = "0.1.0"
+dependencies = [
+ "canvas-mirror-store",
+ "clip2preview",
+ "image",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "canvas-mirror-store"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "toml",
+]
+
+[[package]]
+name = "canvas-mirror-watcher"
+version = "0.1.0"
+dependencies = [
+ "canvas-mirror-config",
+ "canvas-mirror-core",
+ "canvas-mirror-model",
+ "canvas-mirror-store",
+ "notify",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "cc"
 version = "1.2.60"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -846,124 +964,6 @@ dependencies = [
  "png",
  "zune-core",
  "zune-jpeg",
-]
-
-[[package]]
-name = "image-server-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "clap",
- "image-server-config",
- "image-server-core",
- "image-server-host",
- "image-server-model",
- "image-server-store",
- "image-server-watcher",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "url",
-]
-
-[[package]]
-name = "image-server-config"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
- "toml",
- "url",
-]
-
-[[package]]
-name = "image-server-core"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "image-server-config",
- "image-server-model",
- "image-server-store",
- "indexmap",
- "parking_lot",
- "tempfile",
- "thiserror",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "image-server-host"
-version = "0.1.0"
-dependencies = [
- "axum",
- "futures",
- "if-addrs",
- "image-server-config",
- "image-server-core",
- "image-server-model",
- "image-server-preview",
- "image-server-store",
- "image-server-watcher",
- "qrcode-generator",
- "serde",
- "serde_json",
- "sha2",
- "tokio",
- "url",
- "uuid",
-]
-
-[[package]]
-name = "image-server-model"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "image-server-store",
- "serde",
- "serde_json",
- "url",
-]
-
-[[package]]
-name = "image-server-preview"
-version = "0.1.0"
-dependencies = [
- "clip2preview",
- "image",
- "image-server-store",
- "tempfile",
- "thiserror",
- "tokio",
-]
-
-[[package]]
-name = "image-server-store"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
- "toml",
-]
-
-[[package]]
-name = "image-server-watcher"
-version = "0.1.0"
-dependencies = [
- "image-server-config",
- "image-server-core",
- "image-server-model",
- "image-server-store",
- "notify",
- "tempfile",
- "thiserror",
- "tokio",
 ]
 
 [[package]]

@@ -1,13 +1,13 @@
 [workspace]
 members = [
-    "apps/image-server-cli",
-    "crates/image-server-config",
-    "crates/image-server-core",
-    "crates/image-server-host",
-    "crates/image-server-preview",
-    "crates/image-server-store",
-    "crates/image-server-model",
-    "crates/image-server-watcher",
+    "apps/canvas-mirror",
+    "crates/canvas-mirror-config",
+    "crates/canvas-mirror-core",
+    "crates/canvas-mirror-host",
+    "crates/canvas-mirror-preview",
+    "crates/canvas-mirror-store",
+    "crates/canvas-mirror-model",
+    "crates/canvas-mirror-watcher",
 ]
 resolver = "2"
 
