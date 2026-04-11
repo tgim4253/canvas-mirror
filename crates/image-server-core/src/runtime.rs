@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::VecDeque, sync::Arc};
 
 use chrono::{DateTime, Utc};
 use image_server_config::ServerConfig;
@@ -11,7 +11,9 @@ pub(crate) struct ServerCoreInner {
     pub(crate) config: ServerConfig,
     pub(crate) store: RoomStore,
     pub(crate) rooms: IndexMap<String, RoomRuntime>,
-    pub(crate) logs: Vec<LogEntryDto>,
+    pub(crate) room_revision: u64,
+    pub(crate) logs: VecDeque<LogEntryDto>,
+    pub(crate) log_cursor_start: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -26,8 +28,8 @@ pub(crate) struct RoomRuntime {
 impl RoomRuntime {
     pub(crate) fn new(room: RoomRecord) -> Self {
         Self {
-            room,
             state: RoomState::Running,
+            room,
             devices: IndexMap::new(),
             latest_snapshot: None,
             last_error: None,
@@ -42,7 +44,6 @@ pub(crate) struct RoomDeviceRuntime {
     pub(crate) platform: DevicePlatform,
     pub(crate) joined_at: DateTime<Utc>,
     pub(crate) last_seen_at: Option<DateTime<Utc>>,
-    pub(crate) last_snapshot_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone)]

@@ -1,6 +1,7 @@
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct UpdateRoomCommand {
     pub name: Option<String>,
+    pub detection_enabled: Option<bool>,
     pub target_path: Option<std::path::PathBuf>,
     pub mode: Option<image_server_store::DetectionMode>,
     pub interval_ms: Option<u64>,
@@ -18,7 +19,6 @@ pub struct JoinRoomCommand {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublishSnapshotCommand {
-    pub device_id: Option<String>,
     pub bytes: Vec<u8>,
     pub mime_type: Option<String>,
     pub width: Option<u32>,

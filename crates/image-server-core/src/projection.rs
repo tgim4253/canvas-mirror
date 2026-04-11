@@ -36,7 +36,6 @@ pub(crate) fn room_device(
         platform: device.platform.clone(),
         state: device_state(room_state, device.last_seen_at, now, stale_timeout),
         last_seen_at: device.last_seen_at,
-        last_snapshot_at: device.last_snapshot_at,
     }
 }
 

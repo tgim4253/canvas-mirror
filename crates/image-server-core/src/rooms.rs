@@ -1,5 +1,5 @@
 use chrono::Utc;
-use image_server_model::{LogLevel, RoomDto, RoomState};
+use image_server_model::{LogLevel, RoomDto};
 use image_server_store::RoomRecord;
 
 use crate::{
@@ -8,13 +8,15 @@ use crate::{
     persistence::persist_store,
     projection::{room_view, stale_timeout},
     runtime::RoomRuntime,
-    server::{push_log, ServerCore},
+    server::{bump_room_revision, push_log, push_low_interval_warning, validate_room, ServerCore},
 };
 
 impl ServerCore {
     pub fn create_room(&self, room: RoomRecord) -> Result<RoomDto, CoreError> {
+        validate_room(&room)?;
         let room_id = room.id.clone();
         let room_name = room.name.clone();
+        let room_for_warning = room.clone();
         let mut inner = self.inner.write();
         if inner.rooms.contains_key(&room_id) {
             return Err(CoreError::RoomAlreadyExists { room_id });
@@ -33,12 +35,14 @@ impl ServerCore {
 
         inner.store = next_store;
         inner.rooms.insert(room_id.clone(), runtime);
+        bump_room_revision(&mut inner);
         push_log(
-            &mut inner.logs,
+            &mut inner,
             LogLevel::Info,
             "room",
             format!("room '{room_name}' ({room_id}) created"),
         );
+        push_low_interval_warning(&mut inner, &room_for_warning);
         Ok(view)
     }
 
@@ -59,6 +63,8 @@ impl ServerCore {
             .clone();
 
         let updated_room = apply_room_update(current_room, update);
+        validate_room(&updated_room)?;
+        let room_for_warning = updated_room.clone();
         let mut next_store = inner.store.clone();
         next_store.upsert_room(updated_room.clone());
         persist_store(&inner.config.store_path, &next_store)?;
@@ -73,12 +79,14 @@ impl ServerCore {
 
         let view = room_view(runtime, Utc::now(), stale_timeout);
         inner.store = next_store;
+        bump_room_revision(&mut inner);
         push_log(
-            &mut inner.logs,
+            &mut inner,
             LogLevel::Info,
             "room",
             format!("room '{}' updated", room_id),
         );
+        push_low_interval_warning(&mut inner, &room_for_warning);
         Ok(view)
     }
 
@@ -103,8 +111,9 @@ impl ServerCore {
 
         inner.rooms.shift_remove(room_id);
         inner.store = next_store;
+        bump_room_revision(&mut inner);
         push_log(
-            &mut inner.logs,
+            &mut inner,
             LogLevel::Warn,
             "room",
             format!("room '{}' deleted", room_id),
@@ -126,11 +135,12 @@ impl ServerCore {
             .ok_or_else(|| CoreError::RoomNotFound {
                 room_id: room_id.to_string(),
             })?;
-        runtime.state = RoomState::Paused;
+        runtime.state = image_server_model::RoomState::Paused;
 
         let view = room_view(runtime, Utc::now(), stale_timeout);
+        bump_room_revision(&mut inner);
         push_log(
-            &mut inner.logs,
+            &mut inner,
             LogLevel::Warn,
             "room",
             format!("room '{}' paused", room_id),
@@ -147,11 +157,12 @@ impl ServerCore {
             .ok_or_else(|| CoreError::RoomNotFound {
                 room_id: room_id.to_string(),
             })?;
-        runtime.state = RoomState::Running;
+        runtime.state = image_server_model::RoomState::Running;
 
         let view = room_view(runtime, Utc::now(), stale_timeout);
+        bump_room_revision(&mut inner);
         push_log(
-            &mut inner.logs,
+            &mut inner,
             LogLevel::Info,
             "room",
             format!("room '{}' resumed", room_id),
@@ -173,12 +184,12 @@ impl ServerCore {
             .ok_or_else(|| CoreError::RoomNotFound {
                 room_id: room_id.to_string(),
             })?;
-        runtime.state = RoomState::Error;
         runtime.last_error = Some(message.clone());
+        runtime.state = image_server_model::RoomState::Error;
 
         let view = room_view(runtime, Utc::now(), stale_timeout);
         push_log(
-            &mut inner.logs,
+            &mut inner,
             LogLevel::Error,
             "room",
             format!("room '{}' entered error state: {}", room_id, message),
@@ -195,12 +206,12 @@ impl ServerCore {
             .ok_or_else(|| CoreError::RoomNotFound {
                 room_id: room_id.to_string(),
             })?;
-        runtime.state = RoomState::Running;
         runtime.last_error = None;
+        runtime.state = image_server_model::RoomState::Running;
 
         let view = room_view(runtime, Utc::now(), stale_timeout);
         push_log(
-            &mut inner.logs,
+            &mut inner,
             LogLevel::Info,
             "room",
             format!("room '{}' error cleared", room_id),
@@ -212,6 +223,9 @@ impl ServerCore {
 fn apply_room_update(mut room: RoomRecord, update: UpdateRoomCommand) -> RoomRecord {
     if let Some(name) = update.name {
         room.name = name;
+    }
+    if let Some(detection_enabled) = update.detection_enabled {
+        room.detection_enabled = detection_enabled;
     }
     if let Some(target_path) = update.target_path {
         room.target_path = target_path;
