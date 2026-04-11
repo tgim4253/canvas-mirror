@@ -15,9 +15,10 @@ pub struct ServerConfig {
     /// Socket address the server listens on.
     #[serde(default = "default_bind_addr")]
     pub bind_addr: SocketAddr,
-    /// External base URL clients should use to reach the server.
-    #[serde(default = "default_public_url")]
-    pub public_url: Url,
+    /// Optional external base URL clients should use to reach the server.
+    /// When omitted, wrappers may derive candidate local/LAN URLs from `bind_addr`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub public_url: Option<Url>,
     /// Milliseconds before room/device state is treated as stale.
     #[serde(default = "default_stale_timeout_ms")]
     pub stale_timeout_ms: u64,
@@ -31,7 +32,7 @@ impl Default for ServerConfig {
         Self {
             version: default_version(),
             bind_addr: default_bind_addr(),
-            public_url: default_public_url(),
+            public_url: None,
             stale_timeout_ms: default_stale_timeout_ms(),
             store_path: default_store_path(),
         }
@@ -93,12 +94,6 @@ fn default_bind_addr() -> SocketAddr {
     SocketAddr::from(([127, 0, 0, 1], 8787))
 }
 
-fn default_public_url() -> Url {
-    "http://127.0.0.1:8787"
-        .parse()
-        .expect("default public URL must be valid")
-}
-
 fn default_stale_timeout_ms() -> u64 {
     30_000
 }
@@ -123,7 +118,7 @@ mod tests {
 
         assert_eq!(config.version, 1);
         assert_eq!(config.bind_addr, SocketAddr::from(([127, 0, 0, 1], 8787)));
-        assert_eq!(config.public_url.as_str(), "http://127.0.0.1:8787/");
+        assert_eq!(config.public_url, None);
         assert_eq!(config.stale_timeout_ms, 30_000);
         assert_eq!(
             config.store_path,
@@ -224,9 +219,11 @@ mod tests {
         ServerConfig {
             version: 1,
             bind_addr: SocketAddr::from(([127, 0, 0, 1], 8787)),
-            public_url: "http://127.0.0.1:8787"
-                .parse()
-                .expect("sample URL must be valid"),
+            public_url: Some(
+                "http://127.0.0.1:8787"
+                    .parse()
+                    .expect("sample URL must be valid"),
+            ),
             stale_timeout_ms: 30_000,
             store_path: PathBuf::from("./config/rooms.toml"),
         }

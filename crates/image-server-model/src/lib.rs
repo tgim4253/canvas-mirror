@@ -113,7 +113,7 @@ pub struct LogEntryDto {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ServerStatusDto {
     pub generated_at: DateTime<Utc>,
-    pub public_url: Url,
+    pub public_url: Option<Url>,
     pub rooms: Vec<RoomDto>,
     pub logs: Vec<LogEntryDto>,
 }
@@ -234,9 +234,11 @@ mod tests {
                 .with_ymd_and_hms(2026, 4, 11, 12, 0, 0)
                 .single()
                 .expect("timestamp must be valid"),
-            public_url: "http://127.0.0.1:8787"
-                .parse()
-                .expect("sample URL should be valid"),
+            public_url: Some(
+                "http://127.0.0.1:8787"
+                    .parse()
+                    .expect("sample URL should be valid"),
+            ),
             rooms: vec![sample_room_view()],
             logs: vec![LogEntryDto {
                 at: Utc
