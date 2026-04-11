@@ -25,6 +25,10 @@ pub struct ServerConfig {
     /// Path to the persisted room store file loaded at startup.
     #[serde(default = "default_store_path")]
     pub store_path: PathBuf,
+    /// Optional path to a custom viewer HTML file served at `/`.
+    /// When omitted, wrappers may use an embedded default viewer asset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub viewer_path: Option<PathBuf>,
 }
 
 impl Default for ServerConfig {
@@ -35,6 +39,7 @@ impl Default for ServerConfig {
             public_url: None,
             stale_timeout_ms: default_stale_timeout_ms(),
             store_path: default_store_path(),
+            viewer_path: None,
         }
     }
 }
@@ -124,6 +129,7 @@ mod tests {
             config.store_path,
             PathBuf::from("./image-server-store.toml")
         );
+        assert_eq!(config.viewer_path, None);
     }
 
     #[test]
@@ -161,6 +167,7 @@ mod tests {
         assert!(raw.contains("\"bind_addr\""));
         assert!(raw.contains("\"public_url\""));
         assert!(raw.contains("\"store_path\""));
+        assert!(raw.contains("\"viewer_path\""));
         assert_eq!(loaded, config);
     }
 
@@ -177,6 +184,7 @@ mod tests {
 
         let raw = fs::read_to_string(path).expect("saved file should be readable");
         assert!(raw.contains("store_path = \"./config/rooms.toml\""));
+        assert!(raw.contains("viewer_path = \"./viewer/custom.html\""));
         assert_eq!(loaded, config);
     }
 
@@ -226,6 +234,7 @@ mod tests {
             ),
             stale_timeout_ms: 30_000,
             store_path: PathBuf::from("./config/rooms.toml"),
+            viewer_path: Some(PathBuf::from("./viewer/custom.html")),
         }
     }
 }

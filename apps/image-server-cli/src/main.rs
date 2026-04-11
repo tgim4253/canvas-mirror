@@ -3,6 +3,7 @@ mod transport;
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use anyhow::{bail, Context, Result};
@@ -20,7 +21,7 @@ use tokio::{
     task::JoinHandle,
     time::Duration,
 };
-use transport::start_transport_server;
+use transport::{default_viewer_html, start_transport_server};
 
 #[derive(Debug, Parser)]
 #[command(name = "image-server-cli")]
@@ -172,7 +173,8 @@ async fn serve(config_path: &Path) -> Result<()> {
     let (log_shutdown_tx, log_shutdown_rx) = watch::channel(false);
     let log_tailer = spawn_runtime_log_tailer(core.clone(), initial_log_cursor, log_shutdown_rx);
     let config = core.config();
-    let transport = start_transport_server(core.clone(), config.bind_addr)
+    let viewer_html = load_viewer_html(&config)?;
+    let transport = start_transport_server(core.clone(), config.bind_addr, viewer_html)
         .await
         .context("failed to start websocket transport")?;
     let watchers = WatcherService::new(core.clone())
@@ -609,13 +611,28 @@ fn load_core(config_path: &Path) -> Result<ServerCore> {
 fn load_server_config(config_path: &Path) -> Result<ServerConfig> {
     let mut config = ServerConfig::load_from_path(config_path)
         .with_context(|| format!("failed to load config from {}", config_path.display()))?;
+    let base_dir = config_path.parent().unwrap_or_else(|| Path::new("."));
 
     if config.store_path.is_relative() {
-        let base_dir = config_path.parent().unwrap_or_else(|| Path::new("."));
         config.store_path = base_dir.join(&config.store_path);
+    }
+    if let Some(viewer_path) = &mut config.viewer_path {
+        if viewer_path.is_relative() {
+            *viewer_path = base_dir.join(&*viewer_path);
+        }
     }
 
     Ok(config)
+}
+
+fn load_viewer_html(config: &ServerConfig) -> Result<Arc<str>> {
+    let Some(viewer_path) = &config.viewer_path else {
+        return Ok(default_viewer_html());
+    };
+
+    let viewer_html = std::fs::read_to_string(viewer_path)
+        .with_context(|| format!("failed to read viewer HTML from {}", viewer_path.display()))?;
+    Ok(Arc::<str>::from(viewer_html))
 }
 
 fn build_resolution(
@@ -769,9 +786,9 @@ mod tests {
         let mut config = ServerConfig::default();
         config.store_path = PathBuf::from("./data/rooms.toml");
         let config_path = PathBuf::from("/tmp/image-server/server-config.toml");
+        let base_dir = config_path.parent().unwrap_or_else(|| Path::new("."));
 
         if config.store_path.is_relative() {
-            let base_dir = config_path.parent().unwrap_or_else(|| Path::new("."));
             config.store_path = base_dir.join(&config.store_path);
         }
 
@@ -779,6 +796,41 @@ mod tests {
             config.store_path,
             PathBuf::from("/tmp/image-server/./data/rooms.toml")
         );
+    }
+
+    #[test]
+    fn relative_viewer_path_is_resolved_against_config_file() {
+        let mut config = ServerConfig::default();
+        config.viewer_path = Some(PathBuf::from("./viewer/custom.html"));
+        let config_path = PathBuf::from("/tmp/image-server/server-config.toml");
+        let base_dir = config_path.parent().unwrap_or_else(|| Path::new("."));
+
+        if let Some(viewer_path) = &mut config.viewer_path {
+            if viewer_path.is_relative() {
+                *viewer_path = base_dir.join(&*viewer_path);
+            }
+        }
+
+        assert_eq!(
+            config.viewer_path,
+            Some(PathBuf::from("/tmp/image-server/./viewer/custom.html"))
+        );
+    }
+
+    #[test]
+    fn load_viewer_html_uses_custom_override_when_present() {
+        let dir = tempfile::tempdir().expect("temp dir should exist");
+        let viewer_path = dir.path().join("custom-viewer.html");
+        std::fs::write(&viewer_path, "<html>custom viewer</html>")
+            .expect("viewer file should be written");
+        let config = ServerConfig {
+            viewer_path: Some(viewer_path),
+            ..ServerConfig::default()
+        };
+
+        let viewer_html = load_viewer_html(&config).expect("viewer HTML should load");
+
+        assert_eq!(&*viewer_html, "<html>custom viewer</html>");
     }
 
     #[test]

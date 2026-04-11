@@ -1,4 +1,4 @@
-use std::{fmt::Display, net::SocketAddr};
+use std::{fmt::Display, net::SocketAddr, sync::Arc};
 
 use anyhow::{Context, Result};
 use axum::{
@@ -24,10 +24,12 @@ use uuid::Uuid;
 
 const PING_INTERVAL: Duration = Duration::from_secs(15);
 const LIVENESS_TIMEOUT: Duration = Duration::from_secs(45);
+const DEFAULT_VIEWER_HTML: &str = include_str!("../../viewer/index.html");
 
 #[derive(Clone)]
 struct TransportAppState {
     core: ServerCore,
+    viewer_html: Arc<str>,
 }
 
 pub struct TransportRuntime {
@@ -47,6 +49,7 @@ impl TransportRuntime {
 pub async fn start_transport_server(
     core: ServerCore,
     bind_addr: SocketAddr,
+    viewer_html: Arc<str>,
 ) -> Result<TransportRuntime> {
     let listener = TcpListener::bind(bind_addr)
         .await
@@ -54,7 +57,7 @@ pub async fn start_transport_server(
     let app = Router::new()
         .route("/", get(viewer_page))
         .route("/ws", get(ws_handler))
-        .with_state(TransportAppState { core });
+        .with_state(TransportAppState { core, viewer_html });
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
     let handle = tokio::spawn(async move {
         let server = axum::serve(listener, app).with_graceful_shutdown(async move {
@@ -76,8 +79,12 @@ async fn ws_handler(ws: WebSocketUpgrade, State(state): State<TransportAppState>
     ws.on_upgrade(move |socket| handle_socket(state.core, socket))
 }
 
-async fn viewer_page() -> Html<&'static str> {
-    Html(include_str!("viewer.html"))
+pub(crate) fn default_viewer_html() -> Arc<str> {
+    Arc::<str>::from(DEFAULT_VIEWER_HTML)
+}
+
+async fn viewer_page(State(state): State<TransportAppState>) -> Html<String> {
+    Html(state.viewer_html.to_string())
 }
 
 async fn handle_socket(core: ServerCore, mut socket: WebSocket) {
