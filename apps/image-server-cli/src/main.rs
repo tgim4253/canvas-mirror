@@ -209,6 +209,7 @@ async fn serve(config_path: &Path) -> Result<()> {
     print_public_urls("viewer_url", "viewer_urls", &viewer_urls);
     let ws_urls: Vec<String> = viewer_urls.iter().map(ws_public_url).collect();
     print_string_urls("ws_endpoint", "ws_endpoints", &ws_urls);
+    print_room_viewer_links(&status.rooms, &viewer_urls);
     println!("message: press Ctrl-C to stop");
 
     tokio::signal::ctrl_c()
@@ -484,6 +485,33 @@ fn push_http_url(urls: &mut Vec<url::Url>, ip: IpAddr, port: u16) {
 fn print_public_urls(single_label: &str, multi_label: &str, urls: &[url::Url]) {
     let rendered: Vec<String> = urls.iter().map(ToString::to_string).collect();
     print_string_urls(single_label, multi_label, &rendered);
+}
+
+fn print_room_viewer_links(rooms: &[RoomDto], viewer_urls: &[url::Url]) {
+    if rooms.is_empty() || viewer_urls.is_empty() {
+        return;
+    }
+
+    println!("room_viewer_links:");
+    for room in rooms {
+        for viewer_url in room_viewer_urls(viewer_urls, &room.room.id) {
+            println!("- {} -> {}", room.room.id, viewer_url);
+        }
+    }
+}
+
+fn room_viewer_urls(viewer_urls: &[url::Url], room_id: &str) -> Vec<url::Url> {
+    viewer_urls
+        .iter()
+        .cloned()
+        .map(|mut viewer_url| {
+            viewer_url
+                .query_pairs_mut()
+                .clear()
+                .append_pair("room", room_id);
+            viewer_url
+        })
+        .collect()
 }
 
 fn print_string_urls(single_label: &str, multi_label: &str, urls: &[String]) {
@@ -851,6 +879,33 @@ mod tests {
                 "http://110.76.78.33:8787"
                     .parse()
                     .expect("public fallback URL should parse"),
+            ]
+        );
+    }
+
+    #[test]
+    fn room_viewer_urls_append_room_query_parameter() {
+        let urls = room_viewer_urls(
+            &[
+                "http://127.0.0.1:8787/"
+                    .parse()
+                    .expect("viewer URL should parse"),
+                "http://192.168.0.23:8787/"
+                    .parse()
+                    .expect("viewer URL should parse"),
+            ],
+            "room-illustration",
+        );
+
+        assert_eq!(
+            urls,
+            vec![
+                "http://127.0.0.1:8787/?room=room-illustration"
+                    .parse()
+                    .expect("room viewer URL should parse"),
+                "http://192.168.0.23:8787/?room=room-illustration"
+                    .parse()
+                    .expect("room viewer URL should parse"),
             ]
         );
     }
