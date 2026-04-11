@@ -219,6 +219,7 @@ async fn serve(config_path: &Path) -> Result<()> {
     print_public_urls("viewer_url", "viewer_urls", &viewer_urls);
     let ws_urls: Vec<String> = viewer_urls.iter().map(ws_public_url).collect();
     print_string_urls("ws_endpoint", "ws_endpoints", &ws_urls);
+    print_security_notices(&config, &viewer_urls);
     print_room_viewer_links(&room_records, &viewer_urls);
     print_room_qr_links(&room_records, &qr_viewer_url);
     println!("message: press Ctrl-C to stop");
@@ -498,6 +499,25 @@ fn print_public_urls(single_label: &str, multi_label: &str, urls: &[url::Url]) {
     print_string_urls(single_label, multi_label, &rendered);
 }
 
+fn print_security_notices(config: &ServerConfig, viewer_urls: &[url::Url]) {
+    let warnings = security_warnings(config, viewer_urls);
+    let guidance = security_guidance(config, viewer_urls);
+
+    if !warnings.is_empty() {
+        println!("security_warnings:");
+        for warning in warnings {
+            println!("- {warning}");
+        }
+    }
+
+    if !guidance.is_empty() {
+        println!("security_guidance:");
+        for note in guidance {
+            println!("- {note}");
+        }
+    }
+}
+
 fn print_room_viewer_links(rooms: &[RoomRecord], viewer_urls: &[url::Url]) {
     if rooms.is_empty() || viewer_urls.is_empty() {
         return;
@@ -560,6 +580,66 @@ fn preferred_viewer_url(viewer_urls: &[url::Url]) -> Option<url::Url> {
         })
         .cloned()
         .or_else(|| viewer_urls.first().cloned())
+}
+
+fn security_warnings(config: &ServerConfig, viewer_urls: &[url::Url]) -> Vec<String> {
+    let mut warnings = Vec::new();
+    let bind_exposes_lan = bind_addr_exposes_lan(config.bind_addr);
+
+    if bind_exposes_lan {
+        warnings.push(format!(
+            "bind_addr is {}, so any device on the same network can reach this server",
+            config.bind_addr
+        ));
+        if config.bind_addr.ip().is_unspecified() && config.public_url.is_none() {
+            warnings.push(
+                "public_url is auto-derived; verify the printed viewer URLs before sharing links or QR codes"
+                    .to_string(),
+            );
+        }
+    }
+
+    if insecure_transport_exposed(config, viewer_urls) {
+        warnings.push(
+            "the direct HTTP/WS listener is reachable on a non-loopback address, so room tokens and images may travel in plaintext on the network"
+                .to_string(),
+        );
+    }
+
+    warnings
+}
+
+fn security_guidance(config: &ServerConfig, viewer_urls: &[url::Url]) -> Vec<String> {
+    if insecure_transport_exposed(config, viewer_urls) {
+        return vec![
+            "for sensitive images or external sharing, put the server behind HTTPS/WSS via a reverse proxy or tunnel".to_string(),
+            "common options: Caddy, Nginx, Cloudflare Tunnel, or Tailscale Funnel".to_string(),
+        ];
+    }
+
+    Vec::new()
+}
+
+fn is_shareable_insecure_viewer_url(viewer_url: &url::Url) -> bool {
+    if viewer_url.scheme() != "http" {
+        return false;
+    }
+
+    match viewer_url.host() {
+        Some(url::Host::Ipv4(ip)) => !ip.is_loopback(),
+        Some(url::Host::Ipv6(ip)) => !ip.is_loopback(),
+        Some(url::Host::Domain(host)) => host != "localhost",
+        None => false,
+    }
+}
+
+fn bind_addr_exposes_lan(bind_addr: SocketAddr) -> bool {
+    bind_addr.ip().is_unspecified() || !bind_addr.ip().is_loopback()
+}
+
+fn insecure_transport_exposed(config: &ServerConfig, viewer_urls: &[url::Url]) -> bool {
+    bind_addr_exposes_lan(config.bind_addr)
+        || viewer_urls.iter().any(is_shareable_insecure_viewer_url)
 }
 
 fn print_string_urls(single_label: &str, multi_label: &str, urls: &[String]) {
@@ -1066,6 +1146,102 @@ mod tests {
                     .parse()
                     .expect("viewer URL should parse")
             )
+        );
+    }
+
+    #[test]
+    fn security_warnings_flag_wildcard_bind_and_auto_public_url() {
+        let config = ServerConfig {
+            bind_addr: SocketAddr::from(([0, 0, 0, 0], 8787)),
+            public_url: None,
+            ..ServerConfig::default()
+        };
+        let viewer_urls = vec![
+            "http://127.0.0.1:8787/"
+                .parse()
+                .expect("viewer URL should parse"),
+            "http://192.168.0.23:8787/"
+                .parse()
+                .expect("viewer URL should parse"),
+        ];
+
+        assert_eq!(
+            security_warnings(&config, &viewer_urls),
+            vec![
+                "bind_addr is 0.0.0.0:8787, so any device on the same network can reach this server"
+                    .to_string(),
+                "public_url is auto-derived; verify the printed viewer URLs before sharing links or QR codes"
+                    .to_string(),
+                "the direct HTTP/WS listener is reachable on a non-loopback address, so room tokens and images may travel in plaintext on the network"
+                    .to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn security_guidance_recommends_tls_for_shareable_http_urls() {
+        let config = ServerConfig::default();
+        let viewer_urls = vec!["http://192.168.0.23:8787/"
+            .parse()
+            .expect("viewer URL should parse")];
+
+        assert_eq!(
+            security_guidance(&config, &viewer_urls),
+            vec![
+                "for sensitive images or external sharing, put the server behind HTTPS/WSS via a reverse proxy or tunnel"
+                    .to_string(),
+                "common options: Caddy, Nginx, Cloudflare Tunnel, or Tailscale Funnel"
+                    .to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn security_guidance_is_empty_for_https_public_url() {
+        let config = ServerConfig {
+            public_url: Some(
+                "https://viewer.example.com/"
+                    .parse()
+                    .expect("viewer URL should parse"),
+            ),
+            ..ServerConfig::default()
+        };
+        let viewer_urls = viewer_public_urls(&config);
+
+        assert!(security_warnings(&config, &viewer_urls).is_empty());
+        assert!(security_guidance(&config, &viewer_urls).is_empty());
+    }
+
+    #[test]
+    fn security_warnings_still_flag_plaintext_listener_when_public_url_is_https() {
+        let config = ServerConfig {
+            bind_addr: SocketAddr::from(([0, 0, 0, 0], 8787)),
+            public_url: Some(
+                "https://viewer.example.com/"
+                    .parse()
+                    .expect("viewer URL should parse"),
+            ),
+            ..ServerConfig::default()
+        };
+        let viewer_urls = viewer_public_urls(&config);
+
+        assert_eq!(
+            security_warnings(&config, &viewer_urls),
+            vec![
+                "bind_addr is 0.0.0.0:8787, so any device on the same network can reach this server"
+                    .to_string(),
+                "the direct HTTP/WS listener is reachable on a non-loopback address, so room tokens and images may travel in plaintext on the network"
+                    .to_string(),
+            ]
+        );
+        assert_eq!(
+            security_guidance(&config, &viewer_urls),
+            vec![
+                "for sensitive images or external sharing, put the server behind HTTPS/WSS via a reverse proxy or tunnel"
+                    .to_string(),
+                "common options: Caddy, Nginx, Cloudflare Tunnel, or Tailscale Funnel"
+                    .to_string(),
+            ]
         );
     }
 }
