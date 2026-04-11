@@ -855,22 +855,17 @@ dependencies = [
  "anyhow",
  "axum",
  "clap",
- "futures",
- "if-addrs",
  "image-server-config",
  "image-server-core",
+ "image-server-host",
  "image-server-model",
- "image-server-preview",
  "image-server-store",
  "image-server-watcher",
- "qrcode-generator",
  "serde",
  "serde_json",
- "sha2",
  "tempfile",
  "tokio",
  "url",
- "uuid",
 ]
 
 [[package]]
@@ -898,6 +893,28 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "image-server-host"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "futures",
+ "if-addrs",
+ "image-server-config",
+ "image-server-core",
+ "image-server-model",
+ "image-server-preview",
+ "image-server-store",
+ "image-server-watcher",
+ "qrcode-generator",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "url",
  "uuid",
 ]
 

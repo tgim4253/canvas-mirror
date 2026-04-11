@@ -1,0 +1,28 @@
+[package]
+name = "image-server-host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+axum = { workspace = true, features = ["ws"] }
+futures.workspace = true
+if-addrs.workspace = true
+image-server-config = { path = "../image-server-config" }
+image-server-core = { path = "../image-server-core" }
+image-server-model = { path = "../image-server-model" }
+image-server-preview = { path = "../image-server-preview" }
+image-server-store = { path = "../image-server-store" }
+image-server-watcher = { path = "../image-server-watcher" }
+qrcode-generator.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+url.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true
