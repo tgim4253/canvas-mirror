@@ -193,6 +193,7 @@ impl ServerCore {
         runtime.state = canvas_mirror_model::RoomState::Error;
 
         let view = room_view(runtime, Utc::now(), stale_timeout);
+        bump_room_revision(&mut inner);
         push_log(
             &mut inner,
             LogLevel::Error,
@@ -215,6 +216,7 @@ impl ServerCore {
         runtime.state = canvas_mirror_model::RoomState::Running;
 
         let view = room_view(runtime, Utc::now(), stale_timeout);
+        bump_room_revision(&mut inner);
         push_log(
             &mut inner,
             LogLevel::Info,

@@ -8,6 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 axum = { workspace = true, features = ["ws"] }
+chrono.workspace = true
 futures.workspace = true
 if-addrs.workspace = true
 canvas-mirror-config = { path = "../canvas-mirror-config" }

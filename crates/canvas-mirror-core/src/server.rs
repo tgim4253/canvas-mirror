@@ -86,6 +86,75 @@ impl ServerCore {
         // Wrapper layers only need read access to boot config values.
         self.inner.read().config.clone()
     }
+
+    pub fn update_config(&self, config: ServerConfig) {
+        let mut inner = self.inner.write();
+        let previous = inner.config.clone();
+        inner.config = config.clone();
+
+        if previous.bind_addr != config.bind_addr {
+            push_log(
+                &mut inner,
+                LogLevel::Info,
+                "server",
+                format!(
+                    "updated bind address from {} to {}",
+                    previous.bind_addr, config.bind_addr
+                ),
+            );
+        }
+
+        if previous.public_url != config.public_url {
+            let previous_public_url = previous
+                .public_url
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "auto".to_string());
+            let next_public_url = config
+                .public_url
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "auto".to_string());
+            push_log(
+                &mut inner,
+                LogLevel::Info,
+                "server",
+                format!(
+                    "updated public URL from {} to {}",
+                    previous_public_url, next_public_url
+                ),
+            );
+        }
+
+        if previous.stale_timeout_ms != config.stale_timeout_ms {
+            push_log(
+                &mut inner,
+                LogLevel::Info,
+                "server",
+                format!(
+                    "updated stale timeout from {}ms to {}ms",
+                    previous.stale_timeout_ms, config.stale_timeout_ms
+                ),
+            );
+        }
+    }
+
+    pub fn push_runtime_log(&self, level: LogLevel, scope: &str, message: impl Into<String>) {
+        let mut inner = self.inner.write();
+        push_log(&mut inner, level, scope, message.into());
+    }
+
+    pub fn log_info(&self, scope: &str, message: impl Into<String>) {
+        self.push_runtime_log(LogLevel::Info, scope, message);
+    }
+
+    pub fn log_warn(&self, scope: &str, message: impl Into<String>) {
+        self.push_runtime_log(LogLevel::Warn, scope, message);
+    }
+
+    pub fn log_error(&self, scope: &str, message: impl Into<String>) {
+        self.push_runtime_log(LogLevel::Error, scope, message);
+    }
 }
 
 pub(crate) fn push_log(inner: &mut ServerCoreInner, level: LogLevel, scope: &str, message: String) {

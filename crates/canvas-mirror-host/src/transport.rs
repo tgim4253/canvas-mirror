@@ -1,22 +1,129 @@
-use std::fmt::Display;
+use std::{fmt::Display, net::SocketAddr, sync::Arc};
 
-use axum::extract::ws::{Message, WebSocket};
+use axum::{
+    extract::{
+        ws::{Message, WebSocket, WebSocketUpgrade},
+        Path, Query, State,
+    },
+    http::{header::CONTENT_TYPE, StatusCode},
+    response::{Html, IntoResponse, Response},
+    routing::get,
+    Router,
+};
+use canvas_mirror_config::ServerConfig;
 use canvas_mirror_core::{CoreError, JoinRoomCommand, ServerCore, SnapshotBuffer};
 use canvas_mirror_model::{DevicePlatform, RoomDeviceDto, SnapshotMetaDto};
 use futures::{sink::Sink, SinkExt, StreamExt};
 use qrcode_generator::QrCodeEcc;
 use serde::{Deserialize, Serialize};
-use tokio::time::{interval, sleep_until, timeout, Duration, Instant};
+use tokio::{
+    net::TcpListener,
+    sync::oneshot,
+    task::JoinHandle,
+    time::{interval, sleep_until, timeout, Duration, Instant},
+};
 use url::Url;
 use uuid::Uuid;
 
 const PING_INTERVAL: Duration = Duration::from_secs(15);
 const LIVENESS_TIMEOUT: Duration = Duration::from_secs(45);
+const DEFAULT_VIEWER_HTML: &str = include_str!("../../../apps/canvas-mirror-viewer/index.html");
+const DEFAULT_VIEWER_LOCALE_EN: &str =
+    include_str!("../../../apps/canvas-mirror-viewer/locales/en/common.json");
+const DEFAULT_VIEWER_LOCALE_KO: &str =
+    include_str!("../../../apps/canvas-mirror-viewer/locales/ko/common.json");
+const DEFAULT_VIEWER_LOCALE_JP: &str =
+    include_str!("../../../apps/canvas-mirror-viewer/locales/jp/common.json");
+
+#[derive(Clone)]
+struct TransportAppState {
+    core: ServerCore,
+    viewer_html: Arc<str>,
+    qr_viewer_base: Url,
+}
+
+pub struct TransportRuntime {
+    shutdown_tx: Option<oneshot::Sender<()>>,
+    handle: Option<JoinHandle<()>>,
+}
+
+impl TransportRuntime {
+    pub async fn shutdown(mut self) {
+        if let Some(shutdown_tx) = self.shutdown_tx.take() {
+            let _ = shutdown_tx.send(());
+        }
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.await;
+        }
+    }
+}
+
+impl Drop for TransportRuntime {
+    fn drop(&mut self) {
+        if let Some(shutdown_tx) = self.shutdown_tx.take() {
+            let _ = shutdown_tx.send(());
+        }
+        if let Some(handle) = self.handle.take() {
+            handle.abort();
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RoomQrSvgError {
     InvalidLink,
     RenderFailed,
+}
+
+pub async fn start_transport_server(
+    core: ServerCore,
+    bind_addr: SocketAddr,
+    viewer_html: Arc<str>,
+    qr_viewer_base: Url,
+) -> std::io::Result<TransportRuntime> {
+    let listener = TcpListener::bind(bind_addr).await?;
+    let transport_core = core.clone();
+    let app = Router::new()
+        .route("/", get(viewer_page))
+        .route("/locales/{locale}/common.json", get(viewer_locale_page))
+        .route("/qr.svg", get(qr_svg_page))
+        .route("/ws", get(ws_handler))
+        .with_state(TransportAppState {
+            core,
+            viewer_html,
+            qr_viewer_base,
+        });
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let handle = tokio::spawn(async move {
+        let server = axum::serve(listener, app).with_graceful_shutdown(async move {
+            let _ = shutdown_rx.await;
+        });
+
+        if let Err(error) = server.await {
+            transport_core.log_warn(
+                "transport",
+                format!("websocket transport server stopped: {error}"),
+            );
+        }
+    });
+
+    Ok(TransportRuntime {
+        shutdown_tx: Some(shutdown_tx),
+        handle: Some(handle),
+    })
+}
+
+pub fn default_viewer_html() -> Arc<str> {
+    Arc::<str>::from(DEFAULT_VIEWER_HTML)
+}
+
+pub fn load_viewer_html(config: &ServerConfig) -> std::io::Result<Arc<str>> {
+    let Some(viewer_path) = &config.viewer_path else {
+        return Ok(default_viewer_html());
+    };
+
+    let viewer_html = std::fs::read_to_string(viewer_path)?;
+    Ok(Arc::<str>::from(viewer_html))
 }
 
 pub fn generate_room_qr_svg(
@@ -45,6 +152,56 @@ pub fn generate_room_qr_svg(
 
     qrcode_generator::to_svg_to_string(viewer_url.as_str(), QrCodeEcc::Medium, 320, None::<&str>)
         .map_err(|_| RoomQrSvgError::RenderFailed)
+}
+
+async fn ws_handler(ws: WebSocketUpgrade, State(state): State<TransportAppState>) -> Response {
+    ws.on_upgrade(move |socket| handle_viewer_socket(state.core, socket))
+}
+
+async fn viewer_page(State(state): State<TransportAppState>) -> Html<String> {
+    Html(state.viewer_html.to_string())
+}
+
+async fn viewer_locale_page(Path(locale): Path<String>) -> Result<impl IntoResponse, StatusCode> {
+    let Some(messages) = embedded_viewer_locale_messages(&locale) else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+
+    Ok((
+        [(CONTENT_TYPE, "application/json; charset=utf-8")],
+        messages,
+    ))
+}
+
+async fn qr_svg_page(
+    State(state): State<TransportAppState>,
+    Query(query): Query<QrCodeQuery>,
+) -> Result<impl IntoResponse, StatusCode> {
+    if query.room.trim().is_empty() || query.token.trim().is_empty() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    let svg = generate_room_qr_svg(
+        &state.core,
+        &state.qr_viewer_base,
+        &query.room,
+        &query.token,
+    )
+    .map_err(|error| match error {
+        RoomQrSvgError::InvalidLink => StatusCode::NOT_FOUND,
+        RoomQrSvgError::RenderFailed => StatusCode::INTERNAL_SERVER_ERROR,
+    })?;
+
+    Ok(([(CONTENT_TYPE, "image/svg+xml; charset=utf-8")], svg))
+}
+
+fn embedded_viewer_locale_messages(locale: &str) -> Option<&'static str> {
+    match locale {
+        "en" => Some(DEFAULT_VIEWER_LOCALE_EN),
+        "ko" => Some(DEFAULT_VIEWER_LOCALE_KO),
+        "jp" | "ja" => Some(DEFAULT_VIEWER_LOCALE_JP),
+        _ => None,
+    }
 }
 
 pub async fn handle_viewer_socket(core: ServerCore, mut socket: WebSocket) {
@@ -127,7 +284,10 @@ pub async fn handle_viewer_socket(core: ServerCore, mut socket: WebSocket) {
     if sync_latest_snapshot(&core, &mut socket, &room_id)
         .await
         .inspect_err(|error| {
-            eprintln!("warn: failed to sync initial snapshot for room '{room_id}': {error}");
+            core.log_warn(
+                "transport",
+                format!("failed to sync initial snapshot for room '{room_id}': {error}"),
+            );
         })
         .is_err()
     {
@@ -159,8 +319,11 @@ pub async fn handle_viewer_socket(core: ServerCore, mut socket: WebSocket) {
                         if sync_latest_snapshot(&core, &mut sender, &room_id)
                             .await
                             .inspect_err(|error| {
-                                eprintln!(
-                                    "warn: failed to deliver snapshot update for room '{room_id}': {error}"
+                                core.log_warn(
+                                    "transport",
+                                    format!(
+                                        "failed to deliver snapshot update for room '{room_id}': {error}"
+                                    ),
                                 );
                             })
                             .is_err()
@@ -173,8 +336,11 @@ pub async fn handle_viewer_socket(core: ServerCore, mut socket: WebSocket) {
                         if sync_latest_snapshot(&core, &mut sender, &room_id)
                             .await
                             .inspect_err(|error| {
-                                eprintln!(
-                                    "warn: failed to resync lagged snapshot for room '{room_id}': {error}"
+                                core.log_warn(
+                                    "transport",
+                                    format!(
+                                        "failed to resync lagged snapshot for room '{room_id}': {error}"
+                                    ),
                                 );
                             })
                             .is_err()
@@ -191,11 +357,14 @@ pub async fn handle_viewer_socket(core: ServerCore, mut socket: WebSocket) {
                 }
             }
             _ = sleep_until(idle_deadline) => {
-                eprintln!(
-                    "warn: closing idle websocket session '{}' in room '{}' after {:?} without client activity",
-                    device_id,
-                    room_id,
-                    LIVENESS_TIMEOUT
+                core.log_warn(
+                    "transport",
+                    format!(
+                        "closing idle websocket session '{}' in room '{}' after {:?} without client activity",
+                        device_id,
+                        room_id,
+                        LIVENESS_TIMEOUT
+                    ),
                 );
                 break;
             }
@@ -203,6 +372,12 @@ pub async fn handle_viewer_socket(core: ServerCore, mut socket: WebSocket) {
     }
 
     let _ = core.leave_room(&room_id, &device_id);
+}
+
+#[derive(Debug, Deserialize)]
+struct QrCodeQuery {
+    room: String,
+    token: String,
 }
 
 async fn handle_client_message<S>(
@@ -361,8 +536,11 @@ fn touch_device_or_log(core: &ServerCore, room_id: &str, device_id: &str, source
         Ok(()) => {}
         Err(CoreError::RoomNotFound { .. } | CoreError::DeviceNotFound { .. }) => {}
         Err(error) => {
-            eprintln!(
-                "warn: failed to refresh device '{device_id}' in room '{room_id}' from {source}: {error}"
+            core.log_warn(
+                "transport",
+                format!(
+                    "failed to refresh device '{device_id}' in room '{room_id}' from {source}: {error}"
+                ),
             );
         }
     }

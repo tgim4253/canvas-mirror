@@ -6,7 +6,7 @@ use crate::{
     error::CoreError,
     projection::{room_device, stale_timeout},
     runtime::RoomDeviceRuntime,
-    server::{push_log, ServerCore},
+    server::{bump_room_revision, push_log, ServerCore},
 };
 
 impl ServerCore {
@@ -52,6 +52,7 @@ impl ServerCore {
                 device_id: join.id.clone(),
             })?;
         let view = room_device(device, runtime.state.clone(), now, stale_timeout);
+        bump_room_revision(&mut inner);
         push_log(
             &mut inner,
             LogLevel::Info,
@@ -87,6 +88,7 @@ impl ServerCore {
             state: canvas_mirror_model::DeviceState::Offline,
             last_seen_at: device.last_seen_at,
         };
+        bump_room_revision(&mut inner);
         push_log(
             &mut inner,
             LogLevel::Warn,

@@ -1,23 +1,18 @@
-mod transport;
-
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 use canvas_mirror_config::ServerConfig;
 use canvas_mirror_core::{ServerCore, UpdateRoomCommand};
 use canvas_mirror_host::{
-    preferred_viewer_url, room_qr_url, room_viewer_urls, security_guidance, security_warnings,
-    spawn_snapshot_pipeline, viewer_public_urls, ws_public_url,
+    load_viewer_html, preferred_viewer_url, room_qr_url, room_viewer_urls, security_guidance,
+    security_warnings, spawn_snapshot_pipeline, start_transport_server, viewer_public_urls,
+    ws_public_url, RuntimeLogFile,
 };
 use canvas_mirror_model::{LogEntryDto, LogLevel, RoomDto, RoomState, ServerStatusDto};
 use canvas_mirror_store::{DetectionMode, OutputResolution, RoomRecord};
 use canvas_mirror_watcher::WatcherService;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use tokio::{sync::watch, task::JoinHandle, time::Duration};
-use transport::{default_viewer_html, start_transport_server};
 
 #[derive(Debug, Parser)]
 #[command(name = "canvas-mirror")]
@@ -155,22 +150,53 @@ impl From<ModeArg> for DetectionMode {
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+    let log_file = create_cli_log_file().context("failed to initialize CLI log file")?;
+    let command_name = command_name(&cli.command);
+    let _ = log_file.append_line(
+        "info",
+        "cli",
+        format!(
+            "starting command '{}' with config {}",
+            command_name,
+            cli.config.display()
+        ),
+    );
 
-    match cli.command {
-        Command::Serve => serve(&cli.config).await,
-        Command::Status(output) => {
-            let core = load_core(&cli.config)?;
-            print_status(&core.status(), output.json)
+    let result = match cli.command {
+        Command::Serve => serve(&cli.config, &log_file).await,
+        Command::Status(output) => handle_status_command(&cli.config, output, &log_file),
+        Command::Room { command } => handle_room_command(&cli.config, command, &log_file),
+    };
+
+    match &result {
+        Ok(()) => {
+            let _ = log_file.append_line(
+                "info",
+                "cli",
+                format!("command '{}' completed successfully", command_name),
+            );
         }
-        Command::Room { command } => handle_room_command(&cli.config, command),
+        Err(error) => {
+            let _ = log_file.append_line(
+                "error",
+                "cli",
+                format!("command '{}' failed: {error:#}", command_name),
+            );
+        }
     }
+
+    result
 }
 
-async fn serve(config_path: &Path) -> Result<()> {
-    let core = load_core(config_path)?;
-    let initial_log_cursor = core.log_cursor();
+async fn serve(config_path: &Path, log_file: &RuntimeLogFile) -> Result<()> {
+    let (core, initial_log_cursor) = load_core_with_logs(config_path, log_file)?;
     let (log_shutdown_tx, log_shutdown_rx) = watch::channel(false);
-    let log_tailer = spawn_runtime_log_tailer(core.clone(), initial_log_cursor, log_shutdown_rx);
+    let log_tailer = spawn_runtime_log_tailer(
+        core.clone(),
+        initial_log_cursor,
+        log_shutdown_rx,
+        log_file.clone(),
+    );
     let config = core.config();
     let viewer_urls = viewer_public_urls(&config);
     let qr_viewer_url = preferred_viewer_url(&viewer_urls)
@@ -198,6 +224,7 @@ async fn serve(config_path: &Path) -> Result<()> {
     let status = core.status();
 
     println!("config: {}", config_path.display());
+    println!("log_file: {}", log_file.path().display());
     println!(
         "public_url: {}",
         config
@@ -240,6 +267,7 @@ fn spawn_runtime_log_tailer(
     core: ServerCore,
     start_cursor: u64,
     mut shutdown_rx: watch::Receiver<bool>,
+    log_file: RuntimeLogFile,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut next_cursor = start_cursor;
@@ -250,6 +278,12 @@ fn spawn_runtime_log_tailer(
                 _ = shutdown_rx.changed() => break,
                 _ = ticker.tick() => {
                     let (cursor, logs) = core.read_logs_since(next_cursor);
+                    if let Err(error) = log_file.append_runtime_logs(&logs) {
+                        eprintln!(
+                            "warn: failed to persist runtime logs to {}: {error}",
+                            log_file.path().display()
+                        );
+                    }
                     for log in &logs {
                         print_runtime_log(log);
                     }
@@ -339,8 +373,21 @@ fn print_string_urls(single_label: &str, multi_label: &str, urls: &[String]) {
     }
 }
 
-fn handle_room_command(config_path: &Path, command: RoomCommand) -> Result<()> {
-    let core = load_core(config_path)?;
+fn handle_status_command(
+    config_path: &Path,
+    output: OutputArgs,
+    log_file: &RuntimeLogFile,
+) -> Result<()> {
+    let (core, _) = load_core_with_logs(config_path, log_file)?;
+    print_status(&core.status(), output.json)
+}
+
+fn handle_room_command(
+    config_path: &Path,
+    command: RoomCommand,
+    log_file: &RuntimeLogFile,
+) -> Result<()> {
+    let (core, mut log_cursor) = load_core_with_logs(config_path, log_file)?;
 
     match command {
         RoomCommand::List(output) => {
@@ -371,6 +418,7 @@ fn handle_room_command(config_path: &Path, command: RoomCommand) -> Result<()> {
                 .expect("create resolution must exist"),
             };
             let room = core.create_room(room)?;
+            sync_runtime_logs(&core, log_file, &mut log_cursor)?;
             print_room(&room, args.json)
         }
         RoomCommand::Update(args) => {
@@ -396,12 +444,62 @@ fn handle_room_command(config_path: &Path, command: RoomCommand) -> Result<()> {
             }
 
             let room = core.update_room(&args.id, command)?;
+            sync_runtime_logs(&core, log_file, &mut log_cursor)?;
             print_room(&room, args.json)
         }
         RoomCommand::Delete(args) => {
             let room = core.delete_room(&args.id)?;
+            sync_runtime_logs(&core, log_file, &mut log_cursor)?;
             print_room(&room, args.json)
         }
+    }
+}
+
+fn create_cli_log_file() -> Result<RuntimeLogFile> {
+    let cwd = std::env::current_dir().context("failed to resolve current working directory")?;
+    RuntimeLogFile::create(cwd.join("logs"), "canvas-mirror-cli").with_context(|| {
+        format!(
+            "failed to create log file under {}",
+            cwd.join("logs").display()
+        )
+    })
+}
+
+fn load_core_with_logs(config_path: &Path, log_file: &RuntimeLogFile) -> Result<(ServerCore, u64)> {
+    let core = load_core(config_path)?;
+    let mut log_cursor = 0;
+    sync_runtime_logs(&core, log_file, &mut log_cursor)?;
+    Ok((core, log_cursor))
+}
+
+fn sync_runtime_logs(
+    core: &ServerCore,
+    log_file: &RuntimeLogFile,
+    log_cursor: &mut u64,
+) -> Result<()> {
+    let (next_cursor, logs) = core.read_logs_since(*log_cursor);
+    if !logs.is_empty() {
+        log_file.append_runtime_logs(&logs).with_context(|| {
+            format!(
+                "failed to append runtime logs to {}",
+                log_file.path().display()
+            )
+        })?;
+    }
+    *log_cursor = next_cursor;
+    Ok(())
+}
+
+fn command_name(command: &Command) -> &'static str {
+    match command {
+        Command::Serve => "serve",
+        Command::Status(_) => "status",
+        Command::Room { command } => match command {
+            RoomCommand::List(_) => "room-list",
+            RoomCommand::Create(_) => "room-create",
+            RoomCommand::Update(_) => "room-update",
+            RoomCommand::Delete(_) => "room-delete",
+        },
     }
 }
 
@@ -411,30 +509,8 @@ fn load_core(config_path: &Path) -> Result<ServerCore> {
 }
 
 fn load_server_config(config_path: &Path) -> Result<ServerConfig> {
-    let mut config = ServerConfig::load_from_path(config_path)
-        .with_context(|| format!("failed to load config from {}", config_path.display()))?;
-    let base_dir = config_path.parent().unwrap_or_else(|| Path::new("."));
-
-    if config.store_path.is_relative() {
-        config.store_path = base_dir.join(&config.store_path);
-    }
-    if let Some(viewer_path) = &mut config.viewer_path {
-        if viewer_path.is_relative() {
-            *viewer_path = base_dir.join(&*viewer_path);
-        }
-    }
-
-    Ok(config)
-}
-
-fn load_viewer_html(config: &ServerConfig) -> Result<Arc<str>> {
-    let Some(viewer_path) = &config.viewer_path else {
-        return Ok(default_viewer_html());
-    };
-
-    let viewer_html = std::fs::read_to_string(viewer_path)
-        .with_context(|| format!("failed to read viewer HTML from {}", viewer_path.display()))?;
-    Ok(Arc::<str>::from(viewer_html))
+    ServerConfig::load_from_path_resolved(config_path)
+        .with_context(|| format!("failed to load config from {}", config_path.display()))
 }
 
 fn build_resolution(

@@ -70,6 +70,14 @@ impl ServerConfig {
         }
     }
 
+    pub fn load_from_path_resolved(path: impl AsRef<Path>) -> Result<Self, ConfigError> {
+        let path = path.as_ref();
+        let config = Self::load_from_path(path)?;
+        let base_dir = path.parent().unwrap_or_else(|| Path::new("."));
+
+        Ok(config.resolve_relative_paths_from(base_dir))
+    }
+
     pub fn save_to_path(&self, path: impl AsRef<Path>) -> Result<(), ConfigError> {
         let path = path.as_ref();
         let content = match path.extension().and_then(|ext| ext.to_str()) {
@@ -78,6 +86,21 @@ impl ServerConfig {
         };
         fs::write(path, content)?;
         Ok(())
+    }
+
+    pub fn resolve_relative_paths_from(mut self, base_dir: impl AsRef<Path>) -> Self {
+        let base_dir = base_dir.as_ref();
+
+        if self.store_path.is_relative() {
+            self.store_path = base_dir.join(&self.store_path);
+        }
+        if let Some(viewer_path) = &mut self.viewer_path {
+            if viewer_path.is_relative() {
+                *viewer_path = base_dir.join(&*viewer_path);
+            }
+        }
+
+        self
     }
 }
 
@@ -186,6 +209,45 @@ mod tests {
         assert!(raw.contains("store_path = \"./config/rooms.toml\""));
         assert!(raw.contains("viewer_path = \"./viewer/custom.html\""));
         assert_eq!(loaded, config);
+    }
+
+    #[test]
+    fn load_from_path_resolved_expands_relative_store_and_viewer_paths() {
+        let dir = tempfile::tempdir().expect("temp dir should exist");
+        let config_dir = dir.path().join("config");
+        let config_path = config_dir.join("canvas-mirror-config.toml");
+        fs::create_dir_all(&config_dir).expect("config dir should exist");
+        fs::write(
+            &config_path,
+            r#"
+                bind_addr = "127.0.0.1:8787"
+                store_path = "./state/rooms.toml"
+                viewer_path = "./viewer/custom.html"
+            "#,
+        )
+        .expect("config file should be written");
+
+        let loaded =
+            ServerConfig::load_from_path_resolved(&config_path).expect("config should load");
+
+        assert_eq!(loaded.store_path, config_dir.join("state/rooms.toml"));
+        assert_eq!(
+            loaded.viewer_path,
+            Some(config_dir.join("viewer/custom.html"))
+        );
+    }
+
+    #[test]
+    fn resolve_relative_paths_from_leaves_absolute_paths_untouched() {
+        let config = ServerConfig {
+            store_path: PathBuf::from("/tmp/canvas-mirror/rooms.toml"),
+            viewer_path: Some(PathBuf::from("/tmp/canvas-mirror/viewer.html")),
+            ..ServerConfig::default()
+        };
+
+        let resolved = config.clone().resolve_relative_paths_from("/tmp/other");
+
+        assert_eq!(resolved, config);
     }
 
     #[test]

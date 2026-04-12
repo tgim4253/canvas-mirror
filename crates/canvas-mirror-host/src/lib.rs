@@ -1,3 +1,4 @@
+mod runtime_log_file;
 mod transport;
 
 use std::{
@@ -12,9 +13,13 @@ use canvas_mirror_preview::PreviewGenerator;
 use canvas_mirror_store::RoomRecord;
 use canvas_mirror_watcher::WatcherEvent;
 use if_addrs::get_if_addrs;
+pub use runtime_log_file::RuntimeLogFile;
 use sha2::{Digest, Sha256};
 use tokio::{sync::broadcast, task::JoinHandle};
-pub use transport::{generate_room_qr_svg, handle_viewer_socket, RoomQrSvgError};
+pub use transport::{
+    default_viewer_html, generate_room_qr_svg, handle_viewer_socket, load_viewer_html,
+    start_transport_server, RoomQrSvgError, TransportRuntime,
+};
 use url::Url;
 
 pub fn spawn_snapshot_pipeline(
@@ -117,14 +122,15 @@ pub fn viewer_public_urls(config: &ServerConfig) -> Vec<Url> {
 }
 
 pub fn ws_public_url(public_url: &Url) -> String {
-    let mut ws_url = public_url.clone();
+    let mut ws_url = normalize_viewer_url(public_url);
     let scheme = if ws_url.scheme() == "https" {
         "wss"
     } else {
         "ws"
     };
     let _ = ws_url.set_scheme(scheme);
-    ws_url.set_path("/ws");
+    let ws_path = viewer_path_with_suffix(ws_url.path(), "ws");
+    ws_url.set_path(&ws_path);
     ws_url.set_query(None);
     ws_url.set_fragment(None);
     ws_url.to_string()
@@ -133,8 +139,8 @@ pub fn ws_public_url(public_url: &Url) -> String {
 pub fn room_viewer_urls(viewer_urls: &[Url], room: &RoomRecord) -> Vec<Url> {
     viewer_urls
         .iter()
-        .cloned()
-        .map(|mut viewer_url| {
+        .map(|viewer_url| {
+            let mut viewer_url = normalize_viewer_url(viewer_url);
             viewer_url
                 .query_pairs_mut()
                 .clear()
@@ -146,8 +152,9 @@ pub fn room_viewer_urls(viewer_urls: &[Url], room: &RoomRecord) -> Vec<Url> {
 }
 
 pub fn room_qr_url(viewer_url: &Url, room: &RoomRecord) -> Url {
-    let mut qr_url = viewer_url.clone();
-    qr_url.set_path("/qr.svg");
+    let mut qr_url = normalize_viewer_url(viewer_url);
+    let qr_path = viewer_path_with_suffix(qr_url.path(), "qr.svg");
+    qr_url.set_path(&qr_path);
     qr_url
         .query_pairs_mut()
         .clear()
@@ -235,62 +242,69 @@ fn hash_bytes(bytes: &[u8]) -> String {
 
 fn normalize_viewer_url(public_url: &Url) -> Url {
     let mut viewer_url = public_url.clone();
-    viewer_url.set_path("/");
+    let normalized_path = normalize_viewer_base_path(viewer_url.path());
+    viewer_url.set_path(&normalized_path);
     viewer_url.set_query(None);
     viewer_url.set_fragment(None);
     viewer_url
 }
 
+fn normalize_viewer_base_path(path: &str) -> String {
+    match path {
+        "" | "/" => "/".to_string(),
+        _ if path.ends_with('/') => path.to_string(),
+        _ => format!("{path}/"),
+    }
+}
+
+fn viewer_path_with_suffix(base_path: &str, suffix: &str) -> String {
+    let normalized_base = normalize_viewer_base_path(base_path);
+    if normalized_base == "/" {
+        format!("/{suffix}")
+    } else {
+        format!("{normalized_base}{suffix}")
+    }
+}
+
 fn derived_public_urls(bind_addr: SocketAddr) -> Vec<Url> {
-    let interface_ips: Vec<IpAddr> = get_if_addrs()
+    let interface_addrs: Vec<InterfaceAddress> = get_if_addrs()
         .map(|interfaces| {
             interfaces
                 .into_iter()
-                .map(|interface| interface.ip())
+                .map(|interface| {
+                    let ip = interface.ip();
+                    InterfaceAddress {
+                        name: interface.name,
+                        ip,
+                    }
+                })
                 .collect()
         })
         .unwrap_or_default();
-    derived_public_urls_from_ips(bind_addr, &interface_ips)
+    derived_public_urls_from_interfaces(bind_addr, &interface_addrs)
 }
 
-fn derived_public_urls_from_ips(bind_addr: SocketAddr, interface_ips: &[IpAddr]) -> Vec<Url> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct InterfaceAddress {
+    name: String,
+    ip: IpAddr,
+}
+
+fn derived_public_urls_from_interfaces(
+    bind_addr: SocketAddr,
+    interface_addrs: &[InterfaceAddress],
+) -> Vec<Url> {
     let mut urls = Vec::new();
     let port = bind_addr.port();
 
     match bind_addr.ip() {
         IpAddr::V4(ip) if ip.is_unspecified() => {
             push_http_url(&mut urls, IpAddr::V4(Ipv4Addr::LOCALHOST), port);
-            let mut pushed_private = false;
-            for ip in interface_ips {
-                if matches!(ip, IpAddr::V4(v4) if v4.is_private()) {
-                    push_http_url(&mut urls, *ip, port);
-                    pushed_private = true;
-                }
-            }
-            if !pushed_private {
-                for ip in interface_ips {
-                    if matches!(ip, IpAddr::V4(v4) if !v4.is_loopback()) {
-                        push_http_url(&mut urls, *ip, port);
-                    }
-                }
-            }
+            push_ranked_interface_urls(&mut urls, port, interface_addrs);
         }
         IpAddr::V6(ip) if ip.is_unspecified() => {
             push_http_url(&mut urls, IpAddr::V4(Ipv4Addr::LOCALHOST), port);
-            let mut pushed_private = false;
-            for ip in interface_ips {
-                if matches!(ip, IpAddr::V4(v4) if v4.is_private()) {
-                    push_http_url(&mut urls, *ip, port);
-                    pushed_private = true;
-                }
-            }
-            if !pushed_private {
-                for ip in interface_ips {
-                    if matches!(ip, IpAddr::V4(v4) if !v4.is_loopback()) {
-                        push_http_url(&mut urls, *ip, port);
-                    }
-                }
-            }
+            push_ranked_interface_urls(&mut urls, port, interface_addrs);
         }
         ip => push_http_url(&mut urls, ip, port),
     }
@@ -300,6 +314,91 @@ fn derived_public_urls_from_ips(bind_addr: SocketAddr, interface_ips: &[IpAddr])
     }
 
     urls
+}
+
+fn push_ranked_interface_urls(
+    urls: &mut Vec<Url>,
+    port: u16,
+    interface_addrs: &[InterfaceAddress],
+) {
+    let mut candidates = interface_addrs
+        .iter()
+        .filter_map(|interface| match interface.ip {
+            IpAddr::V4(ip) if !ip.is_loopback() && !ip.is_link_local() => {
+                Some((interface_sort_key(&interface.name, ip), IpAddr::V4(ip)))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    candidates.sort_by(|(left_key, left_ip), (right_key, right_ip)| {
+        left_key
+            .cmp(right_key)
+            .then_with(|| left_ip.to_string().cmp(&right_ip.to_string()))
+    });
+
+    for (_, ip) in candidates {
+        push_http_url(urls, ip, port);
+    }
+}
+
+fn interface_sort_key(name: &str, ip: Ipv4Addr) -> (u8, u8, String) {
+    let normalized_name = name.to_ascii_lowercase();
+    (
+        interface_name_rank(&normalized_name),
+        ipv4_scope_rank(ip),
+        normalized_name,
+    )
+}
+
+fn interface_name_rank(name: &str) -> u8 {
+    if is_primary_interface_name(name) {
+        0
+    } else if is_common_physical_interface_name(name) {
+        1
+    } else if is_virtual_interface_name(name) {
+        3
+    } else {
+        2
+    }
+}
+
+fn ipv4_scope_rank(ip: Ipv4Addr) -> u8 {
+    if ip.is_private() {
+        1
+    } else {
+        0
+    }
+}
+
+fn is_primary_interface_name(name: &str) -> bool {
+    matches!(name, "en0" | "eth0" | "wlan0" | "wifi0" | "wl0")
+}
+
+fn is_common_physical_interface_name(name: &str) -> bool {
+    name.starts_with("en")
+        || name.starts_with("eth")
+        || name.starts_with("wlan")
+        || name.starts_with("wifi")
+        || name.starts_with("wl")
+}
+
+fn is_virtual_interface_name(name: &str) -> bool {
+    name.starts_with("bridge")
+        || name.starts_with("br-")
+        || name.starts_with("docker")
+        || name.starts_with("veth")
+        || name.starts_with("virbr")
+        || name.starts_with("vboxnet")
+        || name.starts_with("vmnet")
+        || name.starts_with("utun")
+        || name.starts_with("tun")
+        || name.starts_with("tap")
+        || name.starts_with("tailscale")
+        || name.starts_with("zt")
+        || name.starts_with("lo")
+        || name.starts_with("awdl")
+        || name.starts_with("llw")
 }
 
 fn push_http_url(urls: &mut Vec<Url>, ip: IpAddr, port: u16) {
@@ -365,7 +464,7 @@ mod tests {
 
         assert_eq!(
             viewer_public_urls(&config),
-            vec!["https://example.local:9000/"
+            vec!["https://example.local:9000/base/"
                 .parse()
                 .expect("normalized viewer URL should parse")]
         );
@@ -373,21 +472,24 @@ mod tests {
 
     #[test]
     fn ws_public_url_uses_websocket_scheme() {
-        let public_url = "http://127.0.0.1:8787"
+        let public_url = "http://127.0.0.1:8787/canvas-mirror/"
             .parse()
             .expect("sample URL should parse");
 
-        assert_eq!(ws_public_url(&public_url), "ws://127.0.0.1:8787/ws");
+        assert_eq!(
+            ws_public_url(&public_url),
+            "ws://127.0.0.1:8787/canvas-mirror/ws"
+        );
     }
 
     #[test]
     fn derived_public_urls_include_localhost_and_private_ipv4_for_wildcard_bind() {
-        let urls = derived_public_urls_from_ips(
+        let urls = derived_public_urls_from_interfaces(
             SocketAddr::from(([0, 0, 0, 0], 8787)),
             &[
-                IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-                IpAddr::V4(Ipv4Addr::new(192, 168, 0, 23)),
-                IpAddr::V4(Ipv4Addr::new(10, 0, 0, 14)),
+                sample_interface("lo0", Ipv4Addr::new(127, 0, 0, 1)),
+                sample_interface("en0", Ipv4Addr::new(192, 168, 0, 23)),
+                sample_interface("en1", Ipv4Addr::new(10, 0, 0, 14)),
             ],
         );
 
@@ -409,11 +511,11 @@ mod tests {
 
     #[test]
     fn derived_public_urls_fall_back_to_non_loopback_ipv4_when_no_private_ip_exists() {
-        let urls = derived_public_urls_from_ips(
+        let urls = derived_public_urls_from_interfaces(
             SocketAddr::from(([0, 0, 0, 0], 8787)),
             &[
-                IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-                IpAddr::V4(Ipv4Addr::new(110, 76, 78, 33)),
+                sample_interface("lo0", Ipv4Addr::new(127, 0, 0, 1)),
+                sample_interface("en0", Ipv4Addr::new(110, 76, 78, 33)),
             ],
         );
 
@@ -431,13 +533,40 @@ mod tests {
     }
 
     #[test]
+    fn derived_public_urls_prefer_primary_interface_over_virtual_networks() {
+        let urls = derived_public_urls_from_interfaces(
+            SocketAddr::from(([0, 0, 0, 0], 8787)),
+            &[
+                sample_interface("lo0", Ipv4Addr::new(127, 0, 0, 1)),
+                sample_interface("bridge100", Ipv4Addr::new(192, 168, 64, 1)),
+                sample_interface("en0", Ipv4Addr::new(110, 76, 78, 33)),
+            ],
+        );
+
+        assert_eq!(
+            urls,
+            vec![
+                "http://127.0.0.1:8787"
+                    .parse()
+                    .expect("localhost URL should parse"),
+                "http://110.76.78.33:8787"
+                    .parse()
+                    .expect("primary interface URL should parse"),
+                "http://192.168.64.1:8787"
+                    .parse()
+                    .expect("virtual interface URL should parse"),
+            ]
+        );
+    }
+
+    #[test]
     fn room_viewer_urls_append_room_query_parameter() {
         let urls = room_viewer_urls(
             &[
-                "http://127.0.0.1:8787/"
+                "http://127.0.0.1:8787/canvas-mirror/"
                     .parse()
                     .expect("viewer URL should parse"),
-                "http://192.168.0.23:8787/"
+                "http://192.168.0.23:8787/canvas-mirror/"
                     .parse()
                     .expect("viewer URL should parse"),
             ],
@@ -447,10 +576,10 @@ mod tests {
         assert_eq!(
             urls,
             vec![
-                "http://127.0.0.1:8787/?room=room-illustration&token=viewer-token-abc"
+                "http://127.0.0.1:8787/canvas-mirror/?room=room-illustration&token=viewer-token-abc"
                     .parse()
                     .expect("room viewer URL should parse"),
-                "http://192.168.0.23:8787/?room=room-illustration&token=viewer-token-abc"
+                "http://192.168.0.23:8787/canvas-mirror/?room=room-illustration&token=viewer-token-abc"
                     .parse()
                     .expect("room viewer URL should parse"),
             ]
@@ -460,7 +589,7 @@ mod tests {
     #[test]
     fn room_qr_url_appends_room_query_parameter_and_qr_path() {
         let url = room_qr_url(
-            &"http://192.168.0.23:8787/"
+            &"http://192.168.0.23:8787/canvas-mirror/"
                 .parse()
                 .expect("viewer URL should parse"),
             &sample_room(),
@@ -468,7 +597,7 @@ mod tests {
 
         assert_eq!(
             url,
-            "http://192.168.0.23:8787/qr.svg?room=room-illustration&token=viewer-token-abc"
+            "http://192.168.0.23:8787/canvas-mirror/qr.svg?room=room-illustration&token=viewer-token-abc"
                 .parse()
                 .expect("QR URL should parse")
         );
@@ -603,6 +732,13 @@ mod tests {
             debounce_ms: 750,
             stabilize_ms: 300,
             resolution: OutputResolution::Source,
+        }
+    }
+
+    fn sample_interface(name: &str, ip: Ipv4Addr) -> InterfaceAddress {
+        InterfaceAddress {
+            name: name.to_string(),
+            ip: IpAddr::V4(ip),
         }
     }
 }

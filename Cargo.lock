@@ -262,6 +262,7 @@ dependencies = [
  "canvas-mirror-preview",
  "canvas-mirror-store",
  "canvas-mirror-watcher",
+ "chrono",
  "futures",
  "if-addrs",
  "qrcode-generator",

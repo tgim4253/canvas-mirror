@@ -191,6 +191,37 @@ fn join_room_publish_snapshot_and_read_snapshot_bytes() {
 }
 
 #[test]
+fn publish_snapshot_emits_snapshot_event_without_bumping_room_revision() {
+    let dir = tempdir().expect("temp dir should exist");
+    let core = ServerCore::load(sample_config(dir.path().join("rooms.toml"), 30_000))
+        .expect("core should load");
+    core.create_room(sample_room("room-a", "Room A"))
+        .expect("room should be created");
+
+    let mut snapshot_events = core.subscribe_snapshot_events();
+    let initial_revision = core.room_revision();
+
+    core.publish_snapshot(
+        "room-a",
+        PublishSnapshotCommand {
+            content_hash: "preview-hash-a".to_string(),
+            bytes: vec![1, 2, 3, 4],
+            mime_type: Some("image/png".to_string()),
+            width: Some(1440),
+            height: Some(810),
+        },
+    )
+    .expect("snapshot should publish");
+
+    let event = snapshot_events
+        .try_recv()
+        .expect("snapshot event should be emitted");
+    assert_eq!(event.room_id, "room-a");
+    assert_eq!(event.content_hash, "preview-hash-a");
+    assert_eq!(core.room_revision(), initial_revision);
+}
+
+#[test]
 fn duplicate_device_id_in_same_room_is_rejected() {
     let dir = tempdir().expect("temp dir should exist");
     let core = ServerCore::load(sample_config(dir.path().join("rooms.toml"), 30_000))
