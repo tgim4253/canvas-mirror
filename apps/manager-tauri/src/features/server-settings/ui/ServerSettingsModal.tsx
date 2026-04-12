@@ -20,6 +20,7 @@ import {
   type ServerSettingsDraft,
   WILDCARD_BIND_HOST,
 } from "../model/serverSettings";
+import type { AppUpdateStatus } from "../../app-update";
 import "./server-settings-modal.css";
 
 const BIND_HOST_OPTIONS = [
@@ -66,7 +67,36 @@ type ServerSettingsModalProps = {
   onDraftChange: (
     updater: (current: ServerSettingsDraft) => ServerSettingsDraft,
   ) => void;
+  updateSupported: boolean;
+  updateStatus: AppUpdateStatus;
+  updateCurrentVersion: string | null;
+  updateLatestVersion: string | null;
+  updateDownloadedBytes: number;
+  updateContentLength: number | null;
+  updateError: string | null;
+  updateBusy: boolean;
+  onCheckForUpdates: () => void;
 };
+
+function formatBytes(bytes: number | null) {
+  if (bytes === null || !Number.isFinite(bytes)) {
+    return null;
+  }
+
+  if (bytes < 1_024) {
+    return `${bytes} B`;
+  }
+
+  if (bytes < 1_048_576) {
+    return `${(bytes / 1_024).toFixed(1)} KB`;
+  }
+
+  if (bytes < 1_073_741_824) {
+    return `${(bytes / 1_048_576).toFixed(1)} MB`;
+  }
+
+  return `${(bytes / 1_073_741_824).toFixed(2)} GB`;
+}
 
 export function ServerSettingsModal({
   open,
@@ -79,6 +109,15 @@ export function ServerSettingsModal({
   onClose,
   onSubmit,
   onDraftChange,
+  updateSupported,
+  updateStatus,
+  updateCurrentVersion,
+  updateLatestVersion,
+  updateDownloadedBytes,
+  updateContentLength,
+  updateError,
+  updateBusy,
+  onCheckForUpdates,
 }: ServerSettingsModalProps) {
   const { locale, setLocale, t, translateMaybe } = useI18n();
   const disabled = loading || submitting;
@@ -94,11 +133,40 @@ export function ServerSettingsModal({
     label: t(option.labelKey),
     supportingText: option.supportingText,
   }));
+  const formattedDownloadedBytes = formatBytes(updateDownloadedBytes);
+  const formattedContentLength = formatBytes(updateContentLength);
+  const updateButtonLabel =
+    updateStatus === "checking"
+      ? t("serverSettings.updateAction.checking")
+      : updateStatus === "downloading"
+        ? t("serverSettings.updateAction.downloading")
+        : updateStatus === "installing"
+          ? t("serverSettings.updateAction.installing")
+          : updateStatus === "restarting"
+            ? t("serverSettings.updateAction.restarting")
+            : t("serverSettings.updateAction.check");
+  const updateStatusMessage =
+    updateStatus === "unsupported"
+      ? t("serverSettings.updateStatus.desktopOnly")
+      : updateStatus === "checking"
+        ? t("serverSettings.updateStatus.checking")
+        : updateStatus === "upToDate"
+          ? t("serverSettings.updateStatus.upToDate")
+          : updateStatus === "downloading"
+            ? t("serverSettings.updateStatus.downloading")
+            : updateStatus === "installing"
+              ? t("serverSettings.updateStatus.installing")
+              : updateStatus === "restarting"
+                ? t("serverSettings.updateStatus.restarting")
+                : updateStatus === "error"
+                  ? translateMaybe(updateError ?? "common.requestFailed")
+                  : t("serverSettings.updateStatus.idle");
 
   return (
     <Modal
       open={open}
       size="md"
+      dialogClassName="server-settings-modal"
       onClose={disabled ? undefined : onClose}
       header={
         <ModalHeader
@@ -224,6 +292,61 @@ export function ServerSettingsModal({
                   }))
                 }
               />
+              <div className="server-settings-modal__field server-settings-modal__field--wide server-settings-modal__update">
+                <div className="server-settings-modal__update-header">
+                  <div>
+                    <p className="server-settings-modal__update-title">
+                      {t("serverSettings.updateTitle")}
+                    </p>
+                    <p className="server-settings-modal__field-note">
+                      {t("serverSettings.updateHint")}
+                    </p>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={onCheckForUpdates}
+                    disabled={!updateSupported || updateBusy}
+                  >
+                    {updateButtonLabel}
+                  </Button>
+                </div>
+                {updateCurrentVersion ? (
+                  <p className="server-settings-modal__field-note">
+                    {t("serverSettings.updateCurrentVersion", {
+                      version: updateCurrentVersion,
+                    })}
+                  </p>
+                ) : null}
+                {updateLatestVersion ? (
+                  <p className="server-settings-modal__field-note">
+                    {t("serverSettings.updateLatestVersion", {
+                      version: updateLatestVersion,
+                    })}
+                  </p>
+                ) : null}
+                <p
+                  className={
+                    updateStatus === "error"
+                      ? "server-settings-modal__field-note server-settings-modal__field-note--error"
+                      : "server-settings-modal__field-note"
+                  }
+                >
+                  {updateStatusMessage}
+                </p>
+                {updateStatus === "downloading" && formattedDownloadedBytes ? (
+                  <p className="server-settings-modal__field-note">
+                    {formattedContentLength
+                      ? t("serverSettings.updateProgress.knownTotal", {
+                          downloaded: formattedDownloadedBytes,
+                          total: formattedContentLength,
+                        })
+                      : t("serverSettings.updateProgress.unknownTotal", {
+                          downloaded: formattedDownloadedBytes,
+                        })}
+                  </p>
+                ) : null}
+              </div>
             </div>
           </form>
           {error ? (

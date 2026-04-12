@@ -68,10 +68,12 @@ jobs:
           cache-on-failure: true
 
       - name: Build and publish desktop release
-        uses: tauri-apps/tauri-action@action-v0.6.0
+        uses: tauri-apps/tauri-action@action-v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_SIGNING_IDENTITY: ${{ matrix.apple_signing_identity }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: apps/manager-tauri
           tagName: ${{ github.ref_name }}
@@ -83,4 +85,6 @@ jobs:
             - Windows x64 (unsigned)
           releaseDraft: false
           prerelease: false
+          uploadUpdaterJson: true
+          uploadUpdaterSignatures: true
           args: ${{ matrix.tauri_args }}

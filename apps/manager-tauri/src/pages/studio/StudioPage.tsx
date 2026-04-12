@@ -27,6 +27,7 @@ import {
 import { RoomDeleteModal } from '../../features/room-delete';
 import { RoomQrModal } from '../../features/room-qr';
 import { RuntimeLogPanel } from '../../features/runtime-log';
+import { useAppUpdate } from '../../features/app-update';
 import {
   buildUpdateServerSettingsInput,
   createDraftFromServerSettings,
@@ -212,6 +213,7 @@ export function StudioPage() {
   const [serverSettingsLoading, setServerSettingsLoading] = useState(false);
   const [serverSettingsSubmitting, setServerSettingsSubmitting] = useState(false);
   const [serverSettingsError, setServerSettingsError] = useState<string | null>(null);
+  const appUpdate = useAppUpdate(serverSettingsOpen);
 
   const refreshRooms = async (showSpinner = false) => {
     if (showSpinner) {
@@ -657,6 +659,15 @@ export function StudioPage() {
         error={serverSettingsError}
         onClose={closeServerSettings}
         onSubmit={handleServerSettingsSubmit}
+        updateSupported={appUpdate.supported}
+        updateStatus={appUpdate.status}
+        updateCurrentVersion={appUpdate.currentVersion}
+        updateLatestVersion={appUpdate.latestVersion}
+        updateDownloadedBytes={appUpdate.downloadedBytes}
+        updateContentLength={appUpdate.contentLength}
+        updateError={appUpdate.error}
+        updateBusy={appUpdate.busy}
+        onCheckForUpdates={() => void appUpdate.checkForUpdates()}
         onDraftChange={updater => {
           setServerSettingsDraft(current => updater(current));
           setServerSettingsFieldErrors({});

@@ -1,4 +1,15 @@
 @layer app {
+  .server-settings-modal .c-modal__body-slot {
+    overflow-y: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .server-settings-modal .c-modal__body-slot::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+
   .server-settings-modal__body {
     gap: 16px;
   }
@@ -66,6 +77,29 @@
     color: var(--semantic-colors-status-error);
   }
 
+  .server-settings-modal__update {
+    gap: 10px;
+    padding: 14px;
+    border: 1px solid var(--semantic-colors-border-default);
+    border-radius: var(--primitives-radius-2);
+    background: var(--semantic-colors-surface-low);
+  }
+
+  .server-settings-modal__update-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .server-settings-modal__update-title {
+    margin: 0;
+    color: var(--semantic-colors-text-primary);
+    font-size: var(--type-text-sm-size);
+    line-height: var(--type-text-sm-line-height);
+    font-weight: 600;
+  }
+
   .server-settings-modal__code {
     font-family: var(--font-mono);
     font-size: 0.95em;
@@ -82,6 +116,11 @@
   @media (max-width: 639px) {
     .server-settings-modal__grid {
       grid-template-columns: repeat(1, minmax(0, 1fr));
+    }
+
+    .server-settings-modal__update-header {
+      flex-direction: column;
+      align-items: stretch;
     }
   }
 }
