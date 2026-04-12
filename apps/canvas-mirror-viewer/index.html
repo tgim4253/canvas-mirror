@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-  <title>Canvas Mirror Viewer</title>
+  <title></title>
   <style>
     :root {
       color-scheme: dark;
@@ -249,18 +249,18 @@
 </head>
 <body class="controls-visible">
   <main class="viewer">
-    <img id="preview" alt="latest room preview" />
-    <div id="message"><span>Connecting...</span></div>
+    <img id="preview" alt="" />
+    <div id="message"><span></span></div>
 
     <div class="chrome">
-      <aside class="side-stack" aria-label="viewer controls">
-        <button id="toggleHud" class="control-button primary" type="button" aria-label="Hide controls" title="Hide controls">
+      <aside class="side-stack" aria-label="">
+        <button id="toggleHud" class="control-button primary" type="button" aria-label="" title="">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <rect x="6.5" y="10.25" width="11" height="8.5" rx="2.25"></rect>
             <path d="M9.25 10.25V8.75a2.75 2.75 0 0 1 5.5 0v1.5"></path>
           </svg>
         </button>
-        <button id="connectionToggle" class="control-button secondary" type="button" aria-label="Reconnect" title="Reconnect">
+        <button id="connectionToggle" class="control-button secondary" type="button" aria-label="" title="">
           <svg id="connectionLinkedIcon" viewBox="0 0 20 20" aria-hidden="true">
             <g clip-path="url(#clip-connection-linked)">
               <path d="M7.19296 14.0351H5.43858C4.27535 14.0351 3.15976 13.573 2.33723 12.7505C1.51471 11.928 1.05261 10.8124 1.05261 9.64915C1.05261 8.48592 1.51471 7.37033 2.33723 6.5478C3.15976 5.72528 4.27535 5.26318 5.43858 5.26318H7.19296M12.4561 5.26318H14.2105C15.3738 5.26318 16.4894 5.72528 17.3119 6.5478C18.1344 7.37033 18.5965 8.48592 18.5965 9.64915C18.5965 10.8124 18.1344 11.928 17.3119 12.7505C16.4894 13.573 15.3738 14.0351 14.2105 14.0351H12.4561M6.31577 9.64915H13.3333"></path>
@@ -282,7 +282,7 @@
             </defs>
           </svg>
         </button>
-        <button id="fullscreenToggle" class="control-button secondary" type="button" aria-label="Enter fullscreen" title="Enter fullscreen">
+        <button id="fullscreenToggle" class="control-button secondary" type="button" aria-label="" title="">
           <svg id="fullscreenEnterIcon" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M9 4H4v5"></path>
             <path d="M15 4h5v5"></path>
@@ -298,21 +298,21 @@
         </button>
       </aside>
 
-      <div class="bottom-toolbar" aria-label="image controls">
-        <button id="mirrorToggle" class="control-button" type="button" aria-label="Mirror image" title="Mirror image">
+      <div class="bottom-toolbar" aria-label="">
+        <button id="mirrorToggle" class="control-button" type="button" aria-label="" title="">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M12 4v16"></path>
             <path d="M9 7L5 12l4 5"></path>
             <path d="M15 7l4 5-4 5"></path>
           </svg>
         </button>
-        <button id="rotateImage" class="control-button" type="button" aria-label="Rotate image" title="Rotate 90°">
+        <button id="rotateImage" class="control-button" type="button" aria-label="" title="">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M19 12a7 7 0 1 1-2.05-4.95"></path>
             <path d="M19 5v5h-5"></path>
           </svg>
         </button>
-        <button id="resetRotation" class="control-button" type="button" aria-label="Reset rotation" title="Reset rotation" disabled>
+        <button id="resetRotation" class="control-button" type="button" aria-label="" title="" disabled>
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M10.1 2.18c1.255-.245 2.545-.245 3.8 0"></path>
             <path d="M17.6 3.71c1.062.718 1.975 1.635 2.69 2.7"></path>
@@ -325,7 +325,7 @@
             <path d="M13 12a1 1 0 1 1-2 0a1 1 0 0 1 2 0Z"></path>
           </svg>
         </button>
-        <button id="toggleFit" class="control-button" type="button" aria-label="Fit image" title="Fit image">
+        <button id="toggleFit" class="control-button" type="button" aria-label="" title="">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M8 4H4v4"></path>
             <path d="M16 4h4v4"></path>
@@ -333,7 +333,7 @@
             <path d="M4 16v4h4"></path>
           </svg>
         </button>
-        <button id="toggleGrayscale" class="control-button is-active" type="button" aria-label="Toggle grayscale filter" title="Toggle grayscale">
+        <button id="toggleGrayscale" class="control-button is-active" type="button" aria-label="" title="">
           <svg class="fill" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M12 3a9 9 0 1 0 0 18V3z"></path>
             <path d="M12 3a9 9 0 0 1 0 18"></path>
@@ -348,6 +348,8 @@
     const viewer = document.querySelector(".viewer");
     const preview = document.getElementById("preview");
     const message = document.getElementById("message");
+    const sideStack = document.querySelector(".side-stack");
+    const bottomToolbar = document.querySelector(".bottom-toolbar");
     const toggleHudButton = document.getElementById("toggleHud");
     const connectionToggleButton = document.getElementById("connectionToggle");
     const connectionLinkedIcon = document.getElementById("connectionLinkedIcon");
@@ -363,6 +365,101 @@
     const searchParams = new URLSearchParams(window.location.search);
     const roomId = searchParams.get("room")?.trim() || "";
     const roomToken = searchParams.get("token")?.trim() || "";
+    const LOCALE_STORAGE_KEY = "app.locale";
+
+    function normalizeLocale(rawLocale) {
+      if (!rawLocale) {
+        return "en";
+      }
+
+      const normalizedLocale = rawLocale.trim().toLowerCase().replaceAll("_", "-");
+      if (normalizedLocale === "ko" || normalizedLocale === "ko-kr") {
+        return "ko";
+      }
+      if (
+        normalizedLocale === "jp" ||
+        normalizedLocale === "ja" ||
+        normalizedLocale === "ja-jp"
+      ) {
+        return "jp";
+      }
+      if (
+        normalizedLocale === "en" ||
+        normalizedLocale === "en-us" ||
+        normalizedLocale === "en-gb"
+      ) {
+        return "en";
+      }
+
+      const languageCode = normalizedLocale.split("-", 1)[0];
+      if (languageCode === "ko") {
+        return "ko";
+      }
+      if (languageCode === "ja" || languageCode === "jp") {
+        return "jp";
+      }
+
+      return "en";
+    }
+
+    function toDocumentLang(locale) {
+      return locale === "jp" ? "ja" : locale;
+    }
+
+    function detectLocale() {
+      const searchLocale = searchParams.get("lang") || searchParams.get("locale");
+      if (searchLocale) {
+        return normalizeLocale(searchLocale);
+      }
+
+      try {
+        const storedLocale = window.localStorage.getItem(LOCALE_STORAGE_KEY);
+        if (storedLocale) {
+          return normalizeLocale(storedLocale);
+        }
+      } catch (_) {
+        // Ignore storage failures and fall back to the browser locale.
+      }
+
+      for (const candidate of navigator.languages || []) {
+        return normalizeLocale(candidate);
+      }
+
+      return normalizeLocale(navigator.language);
+    }
+
+    let locale = detectLocale();
+    let messages = {};
+
+    function interpolate(template, values) {
+      if (!values) {
+        return template;
+      }
+
+      return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (match, token) => {
+        const replacement = values[token];
+        return replacement === undefined ? match : String(replacement);
+      });
+    }
+
+    function t(key, values) {
+      const template = messages[key] || key;
+      return interpolate(template, values);
+    }
+
+    function setButtonLabel(button, ariaLabelKey, titleKey = ariaLabelKey) {
+      button.setAttribute("aria-label", t(ariaLabelKey));
+      button.setAttribute("title", t(titleKey));
+    }
+
+    function viewerBaseUrl() {
+      const baseUrl = new URL(window.location.href);
+      const pathname = baseUrl.pathname || "/";
+      baseUrl.pathname = pathname.endsWith("/") ? pathname : `${pathname}/`;
+      baseUrl.search = "";
+      baseUrl.hash = "";
+      return baseUrl;
+    }
 
     let socket = null;
     let pendingSnapshotMeta = null;
@@ -504,8 +601,12 @@
       resetRotationButton.disabled = normalizedRotation() === 0;
       toggleGrayscaleButton.classList.toggle("is-active", viewState.grayscale);
 
-      toggleHudButton.setAttribute("aria-label", viewState.hudHidden ? "Show controls" : "Hide controls");
-      toggleHudButton.setAttribute("title", viewState.hudHidden ? "Show controls" : "Hide controls");
+      setButtonLabel(
+        toggleHudButton,
+        viewState.hudHidden
+          ? "viewer.action.showControls"
+          : "viewer.action.hideControls"
+      );
     }
 
     function applyViewState() {
@@ -534,16 +635,22 @@
       isConnected = connected;
       connectionLinkedIcon.style.display = connected ? "block" : "none";
       connectionBrokenIcon.style.display = connected ? "none" : "block";
-      connectionToggleButton.setAttribute("aria-label", connected ? "Disconnect" : "Reconnect");
-      connectionToggleButton.setAttribute("title", connected ? "Disconnect" : "Reconnect");
+      setButtonLabel(
+        connectionToggleButton,
+        connected ? "viewer.action.disconnect" : "viewer.action.reconnect"
+      );
     }
 
     function setFullscreenState(active) {
       fullscreenToggleButton.classList.toggle("is-active", active);
       fullscreenEnterIcon.style.display = active ? "none" : "block";
       fullscreenExitIcon.style.display = active ? "block" : "none";
-      fullscreenToggleButton.setAttribute("aria-label", active ? "Exit fullscreen" : "Enter fullscreen");
-      fullscreenToggleButton.setAttribute("title", active ? "Exit fullscreen" : "Enter fullscreen");
+      setButtonLabel(
+        fullscreenToggleButton,
+        active
+          ? "viewer.action.exitFullscreen"
+          : "viewer.action.enterFullscreen"
+      );
     }
 
     function isFullscreen() {
@@ -733,13 +840,13 @@
       closeSocket();
       setConnectionState(false);
       if (manual && !preview.src) {
-        setMessage("Disconnected.");
+        setMessage(t("viewer.message.disconnected"));
       }
     }
 
     function connect() {
       if (!roomId || !roomToken) {
-        setMessage("Invalid room link.");
+        setMessage(t("viewer.message.invalidRoomLink"));
         return;
       }
 
@@ -749,12 +856,12 @@
 
       manualDisconnect = false;
       clearReconnectTimer();
-      const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
+      const wsUrl = new URL("ws", viewerBaseUrl());
+      wsUrl.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
       socket = new WebSocket(wsUrl);
       setConnectionState(false);
       if (!preview.src) {
-        setMessage("Connecting...");
+        setMessage(t("viewer.message.connecting"));
       }
 
       socket.addEventListener("open", () => {
@@ -762,7 +869,7 @@
           type: "hello",
           room_id: roomId,
           token: roomToken,
-          name: "Browser Viewer",
+          name: t("viewer.deviceName.browserViewer"),
           platform: "desktop",
           screen_width: window.innerWidth,
           screen_height: window.innerHeight
@@ -785,7 +892,7 @@
         if (payload.type === "joined") {
           setConnectionState(true);
           if (!preview.src) {
-            setMessage(`Waiting for ${payload.room_id}...`);
+            setMessage(t("viewer.message.waitingForRoom", { roomId: payload.room_id }));
           }
           return;
         }
@@ -805,22 +912,85 @@
         setConnectionState(false);
         if (manualDisconnect) {
           if (!preview.src) {
-            setMessage("Disconnected.");
+            setMessage(t("viewer.message.disconnected"));
           }
           return;
         }
 
         if (!preview.src) {
-          setMessage("Connection closed.");
+          setMessage(t("viewer.message.connectionClosed"));
         }
       });
 
       socket.addEventListener("error", () => {
         setConnectionState(false);
         if (!preview.src) {
-          setMessage("Connection error.");
+          setMessage(t("viewer.message.connectionError"));
         }
       });
+    }
+
+    async function loadLocaleMessages(nextLocale) {
+      try {
+        const response = await fetch(new URL(`locales/${nextLocale}/common.json`, viewerBaseUrl()));
+        if (!response.ok) {
+          return {};
+        }
+
+        return await response.json();
+      } catch (_) {
+        return {};
+      }
+    }
+
+    async function loadMessages() {
+      const baseMessages = await loadLocaleMessages("en");
+      const localizedMessages =
+        locale === "en" ? {} : await loadLocaleMessages(locale);
+
+      messages = {
+        ...baseMessages,
+        ...localizedMessages,
+      };
+
+      try {
+        window.localStorage.setItem(LOCALE_STORAGE_KEY, locale);
+      } catch (_) {
+        // Ignore storage failures and keep the in-memory locale.
+      }
+    }
+
+    function applyStaticTranslations() {
+      document.documentElement.lang = toDocumentLang(locale);
+      document.title = t("viewer.title");
+      preview.alt = t("viewer.imageAlt");
+      sideStack?.setAttribute("aria-label", t("viewer.controlsAria"));
+      bottomToolbar?.setAttribute("aria-label", t("viewer.imageControlsAria"));
+      setButtonLabel(mirrorToggleButton, "viewer.action.mirrorImage");
+      setButtonLabel(
+        rotateImageButton,
+        "viewer.action.rotateImage",
+        "viewer.action.rotate90"
+      );
+      setButtonLabel(resetRotationButton, "viewer.action.resetRotation");
+      setButtonLabel(toggleFitButton, "viewer.action.fitImage");
+      setButtonLabel(
+        toggleGrayscaleButton,
+        "viewer.action.toggleGrayscaleFilter",
+        "viewer.action.toggleGrayscale"
+      );
+      if (!preview.src) {
+        setMessage(t("viewer.message.connecting"));
+      }
+    }
+
+    async function initializeViewer() {
+      await loadMessages();
+      applyStaticTranslations();
+      applyViewState();
+      setConnectionState(false);
+      setFullscreenState(false);
+      connect();
     }
 
     toggleHudButton.addEventListener("click", () => {
@@ -909,10 +1079,7 @@
     viewer.addEventListener("touchend", handleTouchEnd, { passive: false });
     viewer.addEventListener("touchcancel", handleTouchEnd, { passive: false });
 
-    applyViewState();
-    setConnectionState(false);
-    setFullscreenState(false);
-    connect();
+    void initializeViewer();
   </script>
 </body>
 </html>
