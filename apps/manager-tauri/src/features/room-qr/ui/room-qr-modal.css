@@ -1,0 +1,37 @@
+@layer app {
+  .room-qr-modal {
+    align-items: stretch;
+    gap: 20px;
+  }
+
+  .room-qr-modal__art {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    padding: 0;
+    border: 1px solid var(--semantic-colors-border-primary);
+    border-radius: var(--primitives-radius-2);
+    background: var(--semantic-colors-surface-tertiary);
+    overflow: hidden;
+  }
+
+  .room-qr-modal__art svg {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 100%;
+  }
+
+  .room-qr-modal__viewer-url-field {
+    font-family: var(--font-mono);
+    font-size: var(--type-text-sm-size);
+    line-height: var(--type-text-sm-line-height);
+    text-overflow: ellipsis;
+  }
+
+  .room-qr-modal__copy-button {
+    box-shadow: none;
+  }
+}

@@ -8,6 +8,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from 'react';
+import { useI18n } from '../../i18n';
 import { cx } from '../../lib/cx';
 import { IconButton } from '../icon-button/IconButton';
 import './modal.css';
@@ -75,7 +76,7 @@ export const ModalHeader = forwardRef<HTMLDivElement, ModalHeaderProps>(function
   {
     title,
     onClose,
-    closeButtonLabel = 'Close modal',
+    closeButtonLabel,
     hideCloseButton = false,
     trailing,
     className,
@@ -84,11 +85,18 @@ export const ModalHeader = forwardRef<HTMLDivElement, ModalHeaderProps>(function
   },
   ref,
 ) {
+  const { t } = useI18n();
   const resolvedTitle = title ?? children;
+  const resolvedCloseButtonLabel = closeButtonLabel ?? t('common.closeModal');
   const resolvedTrailing =
     trailing ??
     (!hideCloseButton && onClose ? (
-      <IconButton icon="close" size="md" aria-label={closeButtonLabel} onClick={onClose} />
+      <IconButton
+        icon="close"
+        size="md"
+        aria-label={resolvedCloseButtonLabel}
+        onClick={onClose}
+      />
     ) : null);
 
   return (

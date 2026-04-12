@@ -88,6 +88,7 @@ export function CheckboxRow({
   checkboxClassName,
   labelClassName,
   disabled,
+  title,
   ...props
 }: CheckboxRowProps) {
   return (
@@ -100,8 +101,15 @@ export function CheckboxRow({
         className,
       )}
       style={style}
+      title={title}
     >
-      <Checkbox {...props} size={size} disabled={disabled} className={checkboxClassName} />
+      <Checkbox
+        {...props}
+        title={title}
+        size={size}
+        disabled={disabled}
+        className={checkboxClassName}
+      />
       <span className={cx('c-checkbox-row__label', labelClassName)}>{label}</span>
     </label>
   );

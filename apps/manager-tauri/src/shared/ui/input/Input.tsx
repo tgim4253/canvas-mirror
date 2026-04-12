@@ -9,6 +9,7 @@ export type InputProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'size'> & {
   destructive?: boolean;
   controlClassName?: string;
   inputClassName?: string;
+  trailing?: ReactNode;
 };
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
@@ -17,10 +18,12 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
     label,
     hint,
     error,
+    title,
     destructive = false,
     className,
     controlClassName,
     inputClassName,
+    trailing,
     disabled,
     'aria-describedby': ariaDescribedBy,
     'aria-invalid': ariaInvalid,
@@ -42,7 +45,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   return (
     <div className={cx('c-input', className)} data-disabled={disabled ? 'true' : undefined}>
       {label ? (
-        <label className="c-input__label" htmlFor={inputId}>
+        <label className="c-input__label" htmlFor={inputId} title={title}>
           {label}
         </label>
       ) : null}
@@ -54,16 +57,19 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
           disabled && 'c-input__control--disabled',
           controlClassName,
         )}
+        title={title}
       >
         <input
           {...props}
           id={inputId}
           ref={ref}
+          title={title}
           disabled={disabled}
           className={cx('c-input__field', inputClassName)}
           aria-invalid={ariaInvalid ?? (isDestructive ? true : undefined)}
           aria-describedby={resolvedDescribedBy || undefined}
         />
+        {trailing ? <div className="c-input__trailing">{trailing}</div> : null}
       </div>
 
       {supportingText ? (

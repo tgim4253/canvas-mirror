@@ -11,6 +11,7 @@ import {
   type ReactNode,
   type Ref,
 } from 'react';
+import { useI18n } from '../../i18n';
 import { cx } from '../../lib/cx';
 import { Icon } from '../icon/Icon';
 import './select.css';
@@ -90,13 +91,14 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
     onOpenChange,
     type = 'default',
     label,
-    placeholder = 'Select',
+    placeholder,
     placeholderLeading,
     className,
     triggerClassName,
     menuClassName,
     listClassName,
     disabled = false,
+    title,
     onClick,
     onKeyDown,
     'aria-label': ariaLabel,
@@ -105,6 +107,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
   },
   ref,
 ) {
+  const { t } = useI18n();
   const triggerId = useId();
   const listboxId = useId();
   const labelId = useId();
@@ -114,6 +117,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
   const isValueControlled = value !== undefined;
   const [internalValue, setInternalValue] = useState(defaultValue);
   const resolvedValue = isValueControlled ? value : internalValue;
+  const resolvedPlaceholder = placeholder ?? t('common.select');
 
   const isOpenControlled = open !== undefined;
   const [internalOpen, setInternalOpen] = useState(defaultOpen);
@@ -343,7 +347,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
       data-disabled={disabled ? 'true' : undefined}
     >
       {label ? (
-        <div id={labelId} className="c-select__label">
+        <div id={labelId} className="c-select__label" title={title}>
           {label}
         </div>
       ) : null}
@@ -357,6 +361,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
         }}
         type="button"
         disabled={disabled}
+        title={title}
         className={cx(
           'c-select__trigger',
           `c-select__trigger--${type}`,
@@ -380,7 +385,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
             <span
               className={cx('c-select__value', !selectedOption && 'c-select__value--placeholder')}
             >
-              {selectedOption ? selectedOption.label : placeholder}
+              {selectedOption ? selectedOption.label : resolvedPlaceholder}
             </span>
 
             {selectedOption?.supportingText ? (

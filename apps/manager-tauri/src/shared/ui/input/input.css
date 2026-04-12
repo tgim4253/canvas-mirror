@@ -4,6 +4,8 @@
     gap: var(--primitives-spacing-15);
     width: 100%;
     min-width: 0;
+    align-self: start;
+    align-content: start;
   }
 
   .c-input__label {
@@ -67,6 +69,24 @@
 
   .c-input__field:disabled::placeholder {
     color: var(--components-input-text-disabled);
+  }
+
+  .c-input__field[type='number'] {
+    appearance: textfield;
+    -moz-appearance: textfield;
+  }
+
+  .c-input__field[type='number']::-webkit-outer-spin-button,
+  .c-input__field[type='number']::-webkit-inner-spin-button {
+    margin: 0;
+    -webkit-appearance: none;
+  }
+
+  .c-input__trailing {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    margin-left: var(--primitives-spacing-15);
   }
 
   .c-input__hint {

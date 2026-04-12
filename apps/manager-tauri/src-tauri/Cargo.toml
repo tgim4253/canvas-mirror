@@ -13,8 +13,26 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+anyhow = "1"
+base64 = "0.22"
+canvas-mirror-config = { path = "../../../crates/canvas-mirror-config" }
+canvas-mirror-core = { path = "../../../crates/canvas-mirror-core" }
+canvas-mirror-host = { path = "../../../crates/canvas-mirror-host" }
+canvas-mirror-model = { path = "../../../crates/canvas-mirror-model" }
+canvas-mirror-store = { path = "../../../crates/canvas-mirror-store" }
+canvas-mirror-watcher = { path = "../../../crates/canvas-mirror-watcher" }
+chrono = { version = "0.4", features = ["clock", "serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2.7.0"
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1", features = ["v4"] }
+parking_lot = "0.12"
+url = "2"
+
+[dev-dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+tempfile = "3"
 
 [workspace]

@@ -1,0 +1,161 @@
+@layer app {
+  .runtime-log-panel {
+    position: fixed;
+    left: 50%;
+    bottom: max(16px, env(safe-area-inset-bottom));
+    z-index: 20;
+    width: min(1400px, calc(100vw - 32px));
+    transform: translateX(-50%);
+    pointer-events: none;
+  }
+
+  .runtime-log-panel__sheet {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% - 1px);
+    left: 0;
+    max-height: min(360px, 52vh);
+    border: 1px solid var(--semantic-colors-border-primary);
+    background: var(--semantic-colors-surface-primary);
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.34);
+    overflow: hidden;
+    pointer-events: auto;
+  }
+
+  .runtime-log-panel__sheet--closing {
+    opacity: 0;
+    transition: opacity 140ms ease;
+    pointer-events: none;
+  }
+
+  .runtime-log-panel--error .runtime-log-panel__sheet,
+  .runtime-log-panel--error .runtime-log-panel__trigger {
+    border-color: color-mix(
+      in srgb,
+      var(--semantic-colors-status-error) 58%,
+      var(--semantic-colors-border-primary)
+    );
+  }
+
+  .runtime-log-panel__trigger {
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    width: 100%;
+    padding: 14px 16px;
+    border: 1px solid var(--semantic-colors-border-primary);
+    background: var(--semantic-colors-surface-secondary);
+    box-shadow: var(--effects-shadow-xs);
+    color: var(--semantic-colors-text-primary);
+    cursor: pointer;
+  }
+
+  .runtime-log-panel__trigger-copy {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+    text-align: left;
+  }
+
+  .runtime-log-panel__trigger-title,
+  .runtime-log-panel__empty {
+    margin: 0;
+    color: var(--semantic-colors-text-primary);
+    font-family: var(--font-mono);
+    font-size: var(--type-text-xs-size);
+    line-height: var(--type-text-xs-line-height);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .runtime-log-panel__trigger-meta {
+    overflow: hidden;
+    color: var(--semantic-colors-text-secondary);
+    font-family: var(--font-mono);
+    font-size: var(--type-text-2xs-size);
+    line-height: var(--type-text-2xs-line-height);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .runtime-log-panel__viewport {
+    max-height: min(360px, 52vh);
+    overflow: auto;
+    padding: 18px 20px 20px;
+    background: var(--semantic-colors-surface-primary);
+    scrollbar-width: thin;
+    scrollbar-color: var(--semantic-colors-border-primary) transparent;
+  }
+
+  .runtime-log-panel__list {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .runtime-log-panel__line {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr);
+    gap: 12px;
+    align-items: start;
+    color: var(--semantic-colors-text-secondary);
+    font-family: var(--font-mono);
+    font-size: var(--type-text-xs-size);
+    line-height: 1.45;
+    letter-spacing: 0.01em;
+  }
+
+  .runtime-log-panel__line--info {
+    color: var(--semantic-colors-text-secondary);
+  }
+
+  .runtime-log-panel__line--warn {
+    color: var(--semantic-colors-status-warning);
+  }
+
+  .runtime-log-panel__line--error {
+    color: var(--semantic-colors-status-error);
+  }
+
+  .runtime-log-panel__time {
+    color: var(--semantic-colors-text-teritary);
+    white-space: nowrap;
+  }
+
+  .runtime-log-panel__scope {
+    color: var(--semantic-colors-status-success);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .runtime-log-panel__message {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .runtime-log-panel__empty {
+    color: var(--semantic-colors-text-secondary);
+    font-size: var(--type-text-xs-size);
+    line-height: 1.5;
+  }
+
+  .runtime-log-panel__empty--error {
+    color: var(--semantic-colors-status-error);
+  }
+
+  @media (max-width: 639px) {
+    .runtime-log-panel__line {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 4px;
+    }
+
+    .runtime-log-panel__trigger-meta {
+      white-space: normal;
+    }
+  }
+}

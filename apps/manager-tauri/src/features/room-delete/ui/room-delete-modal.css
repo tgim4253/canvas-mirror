@@ -1,0 +1,124 @@
+@layer app {
+  .room-delete-modal__title {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--semantic-spacing-component-sm);
+  }
+
+  .room-delete-modal__title .c-icon {
+    color: var(--semantic-colors-status-error);
+  }
+
+  .room-delete-modal {
+    gap: var(--semantic-spacing-component-lg);
+  }
+
+  .room-delete-modal__copy,
+  .room-delete-modal__note,
+  .room-delete-modal__path,
+  .room-delete-modal__relay,
+  .room-delete-modal__error {
+    margin: 0;
+  }
+
+  .room-delete-modal__copy {
+    color: var(--semantic-colors-text-secondary);
+    font-size: var(--type-text-sm-size);
+    line-height: var(--type-text-sm-line-height);
+  }
+
+  .room-delete-modal__name {
+    color: var(--semantic-colors-text-primary);
+    font-family: var(--font-display);
+    font-size: var(--type-text-md-size);
+    font-weight: var(--font-weight-bold);
+    letter-spacing: -0.02em;
+    text-transform: uppercase;
+  }
+
+  .room-delete-modal__meta {
+    display: grid;
+    gap: var(--semantic-spacing-component-sm);
+    padding: var(--semantic-spacing-component-md);
+    border: 1px solid var(--semantic-colors-border-primary);
+    background: var(--semantic-colors-surface-secondary);
+    box-shadow: var(--effects-shadow-xs);
+  }
+
+  .room-delete-modal__status {
+    --delete-room-status-bg: color-mix(
+      in srgb,
+      var(--semantic-colors-status-info) 16%,
+      var(--semantic-colors-surface-secondary)
+    );
+    --delete-room-status-fg: var(--semantic-colors-status-info);
+    --delete-room-status-dot: var(--semantic-colors-status-info);
+    --_chip-background: var(--delete-room-status-bg);
+    --_chip-border-color: transparent;
+    --_chip-text-color: var(--delete-room-status-fg);
+    --_chip-height: 24px;
+    --_chip-padding-x: 10px;
+    --_chip-padding-y: 4px;
+    --_chip-gap: 6px;
+    --_chip-font-size: var(--type-text-2xs-size);
+    --_chip-font-weight: var(--font-weight-bold);
+    --_chip-line-height: var(--type-text-2xs-line-height);
+    --_chip-letter-spacing: 0.08em;
+    --_chip-text-transform: uppercase;
+    justify-self: start;
+  }
+
+  .room-delete-modal__status--paused {
+    --delete-room-status-bg: var(--semantic-colors-surface-tertiary);
+    --delete-room-status-fg: var(--semantic-colors-text-secondary);
+    --delete-room-status-dot: var(--semantic-colors-text-secondary);
+  }
+
+  .room-delete-modal__status--error {
+    --delete-room-status-bg: color-mix(
+      in srgb,
+      var(--semantic-colors-status-error) 18%,
+      var(--semantic-colors-surface-secondary)
+    );
+    --delete-room-status-fg: var(--semantic-colors-status-error);
+    --delete-room-status-dot: var(--semantic-colors-status-error);
+  }
+
+  .room-delete-modal__status-dot {
+    width: 6px;
+    height: 6px;
+    flex: none;
+    border-radius: 999px;
+    background: var(--delete-room-status-dot);
+  }
+
+  .room-delete-modal__status .c-chip__text {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .room-delete-modal__path,
+  .room-delete-modal__relay {
+    overflow: hidden;
+    color: var(--semantic-colors-text-teritary);
+    font-family: var(--font-mono);
+    font-size: var(--type-text-xs-size);
+    line-height: var(--type-text-xs-line-height);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .room-delete-modal__note {
+    color: var(--semantic-colors-text-teritary);
+    font-size: var(--type-text-xs-size);
+    line-height: var(--type-text-xs-line-height);
+  }
+
+  .room-delete-modal__error {
+    color: var(--semantic-colors-status-error);
+    font-family: var(--font-mono);
+    font-size: var(--type-text-xs-size);
+    line-height: var(--type-text-xs-line-height);
+  }
+}

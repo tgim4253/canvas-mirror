@@ -1,0 +1,16 @@
+{
+  "name": "@canvas-mirror/scripts",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "translate": "node translator.mjs",
+    "extract-translation": "node ./extract-translations.mjs",
+    "extract-translations": "node ./extract-translations.mjs"
+  },
+  "packageManager": "pnpm@10.13.1",
+  "dependencies": {
+    "fs-extra": "^11.3.0",
+    "xlsx": "^0.18.5"
+  }
+}

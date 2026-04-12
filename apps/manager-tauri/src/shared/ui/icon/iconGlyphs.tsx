@@ -21,15 +21,24 @@ export const ICON_NAMES = [
   'link-2',
   'link-2-off',
   'link-to',
+  'list',
   'minus',
+  'pause',
+  'pause-circle',
+  'play',
   'plus',
+  'qr-code',
   'reload',
   'search',
   'setting',
+  'smartphone',
   'star',
+  'stop',
   'tree',
+  'trash',
   'user',
   'user-round-plus',
+  'warning',
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];
@@ -82,6 +91,78 @@ const reloadGlyph = (
   <>
     <path d="M3 12a9 9 0 1 0 2.64-6.36" />
     <path d="M3 4v5h5" />
+  </>
+);
+
+const listGlyph = (
+  <>
+    <circle cx="4.5" cy="6" r="1.25" fill="currentColor" stroke="none" />
+    <circle cx="4.5" cy="12" r="1.25" fill="currentColor" stroke="none" />
+    <circle cx="4.5" cy="18" r="1.25" fill="currentColor" stroke="none" />
+    <path d="M8 6h12.5" />
+    <path d="M8 12h12.5" />
+    <path d="M8 18h12.5" />
+  </>
+);
+
+const pauseCircleGlyph = (
+  <>
+    <circle cx="12" cy="12" r="10" />
+    <path d="M10 9v6" />
+    <path d="M14 9v6" />
+  </>
+);
+
+const pauseGlyph = (
+  <>
+    <path d="M9 7.5v9" />
+    <path d="M15 7.5v9" />
+  </>
+);
+
+const playGlyph = <path d="M8 6.5v11l9-5.5-9-5.5Z" fill="currentColor" stroke="none" />;
+
+const qrCodeGlyph = (
+  <>
+    <rect x="3" y="3" width="5" height="5" rx="1" />
+    <rect x="16" y="3" width="5" height="5" rx="1" />
+    <rect x="3" y="16" width="5" height="5" rx="1" />
+    <path d="M21 16h-3a2 2 0 0 0-2 2v3" />
+    <path d="M21 21v.01" />
+    <path d="M12 7v3a2 2 0 0 1-2 2H7" />
+    <path d="M3 12h.01" />
+    <path d="M12 3h.01" />
+    <path d="M12 16v.01" />
+    <path d="M16 12h1" />
+    <path d="M21 12v.01" />
+    <path d="M12 21v-1" />
+  </>
+);
+
+const smartphoneGlyph = (
+  <>
+    <rect x="7" y="2.5" width="10" height="19" rx="2.25" />
+    <path d="M11 18h2" />
+  </>
+);
+
+const stopGlyph = <rect x="7" y="7" width="10" height="10" rx="1.8" fill="currentColor" stroke="none" />;
+
+const trashGlyph = (
+  <>
+    <path d="M4 7h16" />
+    <path d="M9 7V4.75A1.75 1.75 0 0 1 10.75 3h2.5A1.75 1.75 0 0 1 15 4.75V7" />
+    <path d="M6 7 7 19.25A1.75 1.75 0 0 0 8.75 21h6.5A1.75 1.75 0 0 0 17 19.25L18 7" />
+    <path d="M10 11v6" />
+    <path d="M14 11v6" />
+  </>
+);
+
+const warningGlyph = (
+  <>
+    <path d="M12 3 22 20H2L12 3Z" />
+    <path d="M12 9v4.5" />
+    <path d="M12 17h.01" />
   </>
 );
 
@@ -164,7 +245,11 @@ export const ICON_GLYPHS = {
       <path d="M15 3h6v6" />
     </>
   ),
+  list: listGlyph,
   minus: <path d="M5 12h14" />,
+  pause: pauseGlyph,
+  'pause-circle': pauseCircleGlyph,
+  play: playGlyph,
   plus: (
     <path
       fill="currentColor"
@@ -172,6 +257,7 @@ export const ICON_GLYPHS = {
       d="M10.56 13.44H0v-2.88h10.56V0h2.88v10.56H24v2.88H13.44V24h-2.88z"
     />
   ),
+  'qr-code': qrCodeGlyph,
   reload: reloadGlyph,
   search: (
     <>
@@ -185,10 +271,13 @@ export const ICON_GLYPHS = {
       <circle cx="12" cy="12" r="3" />
     </>
   ),
+  smartphone: smartphoneGlyph,
   star: (
     <path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z" />
   ),
+  stop: stopGlyph,
   tree: treeGlyph,
+  trash: trashGlyph,
   user: (
     <>
       <circle cx="12" cy="8" r="5" />
@@ -203,4 +292,5 @@ export const ICON_GLYPHS = {
       <path d="M22 19h-6" />
     </>
   ),
+  warning: warningGlyph,
 } satisfies Record<IconName, ReactNode>;

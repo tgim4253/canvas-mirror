@@ -1,0 +1,140 @@
+@layer app {
+  .room-editor-modal__body {
+    gap: 16px;
+  }
+
+  .room-editor-modal__form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .room-editor-modal__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .room-editor-modal__field--wide {
+    grid-column: 1 / -1;
+  }
+
+  .room-editor-modal__mode-field,
+  .room-editor-modal__file-field {
+    display: grid;
+    gap: var(--primitives-spacing-15);
+  }
+
+  .room-editor-modal__label {
+    color: var(--semantic-colors-text-secondary);
+    font-family: var(--primitives-typography-font-family-ui);
+    font-size: var(--primitives-typography-font-size-md);
+    font-weight: var(--primitives-typography-font-weight-medium);
+    line-height: 20px;
+  }
+
+  .room-editor-modal__mode-segmented {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0;
+    padding: 0;
+    border: 1px solid var(--semantic-colors-border-primary);
+    border-radius: var(--components-input-container-size-radius);
+    background: var(--semantic-colors-surface-secondary);
+    box-shadow: var(--effects-shadow-xs);
+    overflow: hidden;
+  }
+
+  .room-editor-modal__mode-button {
+    --_button-height: 44px;
+    --_button-radius: 0;
+    --_button-border: transparent;
+    --_button-background: transparent;
+    --_button-background-hover: var(--semantic-colors-surface-tertiary);
+    --_button-background-active: var(--semantic-colors-surface-tertiary);
+    --_button-text: var(--semantic-colors-text-secondary);
+    box-shadow: none;
+    font-size: var(--primitives-typography-font-size-xl);
+    font-weight: var(--primitives-typography-font-weight-semibold);
+    justify-content: center;
+    letter-spacing: -0.03em;
+  }
+
+  .room-editor-modal__mode-button--active {
+    --_button-background: var(--semantic-colors-brand-primary);
+    --_button-background-hover: var(--semantic-colors-brand-primary);
+    --_button-background-active: var(--semantic-colors-brand-primary);
+    --_button-text: var(--semantic-colors-text-on-brand);
+  }
+
+  .room-editor-modal__file-trigger {
+    --_button-height: auto;
+    --_button-padding-x: var(--components-input-container-size-padding-x);
+    --_button-padding-y: var(--components-input-container-size-padding-y);
+    --_button-radius: var(--components-input-container-size-radius);
+    --_button-border: var(--components-input-container-border);
+    --_button-background: var(--components-input-container-background);
+    --_button-background-hover: var(--semantic-colors-surface-tertiary);
+    --_button-background-active: var(--semantic-colors-surface-tertiary);
+    --_button-text: var(--semantic-colors-text-primary);
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    box-shadow: var(--effects-shadow-xs);
+    text-align: left;
+  }
+
+  .room-editor-modal__file-trigger-copy {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .room-editor-modal__file-trigger-value {
+    overflow: hidden;
+    color: var(--semantic-colors-text-primary);
+    font-family: var(--font-mono);
+    font-size: var(--primitives-typography-font-size-lg);
+    line-height: 24px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .room-editor-modal__file-trigger-value--placeholder {
+    color: var(--components-input-text-placeholder);
+    font-family: var(--primitives-typography-font-family-ui);
+  }
+
+  .room-editor-modal__file-trigger-hint {
+    color: var(--semantic-colors-text-teritary);
+    font-size: var(--type-text-xs-size);
+    line-height: var(--type-text-xs-line-height);
+  }
+
+  .room-editor-modal__file-trigger-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+  }
+
+  .room-editor-modal__checkbox {
+    border-top: 1px solid var(--semantic-colors-border-primary);
+    padding-top: 16px;
+  }
+
+  .room-editor-modal__error {
+    margin: 0;
+    color: var(--semantic-colors-status-error);
+    font-family: var(--font-mono);
+    font-size: var(--type-text-xs-size);
+    line-height: var(--type-text-xs-line-height);
+  }
+
+  @media (max-width: 639px) {
+    .room-editor-modal__grid {
+      grid-template-columns: repeat(1, minmax(0, 1fr));
+    }
+  }
+}
