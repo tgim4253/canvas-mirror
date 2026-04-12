@@ -4,7 +4,7 @@
 > Canvas Mirror uses plain HTTP/WS by default. Do not use sensitive data or images over public or shared networks unless you put it behind HTTPS/WSS.
 
 > macOS note
-> The GitHub release build for macOS is ad-hoc signed, but it is not notarized. Gatekeeper may still show a security warning, and users may need to open the app manually from Privacy & Security.
+> The GitHub release build for macOS is ad-hoc signed, but it is not notarized. If macOS blocks the app with a security warning, remove the quarantine attribute and open it from Terminal.
 
 Mirror illustration previews to another screen over your local network.
 
@@ -44,14 +44,16 @@ Canvas Mirror Studio lets you create a canvas from a local file, watch for chang
 
 ### macOS release note
 
-The macOS release build is distributed with ad-hoc signing to reduce "app is damaged" style errors, but it is still not notarized. On first launch, macOS may show a security warning such as "developer cannot be verified".
+The macOS release build is distributed with ad-hoc signing to reduce "app is damaged" style errors, but it is still not notarized.
 
-If Gatekeeper blocks the app, open it from `System Settings > Privacy & Security`, or remove the quarantine attribute manually:
+If macOS shows a warning like `Apple cannot verify "Canvas Mirror Studio" is free of malware that may harm your Mac or compromise your privacy.`, run the following commands in Terminal:
 
 ```bash
 xattr -dr com.apple.quarantine "/Applications/Canvas Mirror Studio.app"
 open "/Applications/Canvas Mirror Studio.app"
 ```
+
+You can also allow the app from `System Settings > Privacy & Security`, but the Terminal command above is usually faster for local testing.
 
 ## CLI
 
