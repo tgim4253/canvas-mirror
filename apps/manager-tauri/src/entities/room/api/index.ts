@@ -1,10 +1,12 @@
 import { invokeTauri, listenTauri } from '../../../shared/lib/tauri';
 import type {
+  AvailableIccProfileDto,
   CreateRoomInput,
   ManagedRoomDto,
   RoomPreviewDto,
   RuntimeLogsChangedDto,
   ServerStatusDto,
+  StoredIccProfile,
   UpdateRoomInput,
 } from '../../../shared/type';
 import {
@@ -23,6 +25,18 @@ export function createRoom(input: CreateRoomInput) {
 
 export function updateRoom(roomId: string, input: UpdateRoomInput) {
   return invokeTauri<ManagedRoomDto>('update_room', { roomId, input });
+}
+
+export function loadIccProfile(path: string) {
+  return invokeTauri<StoredIccProfile>('load_icc_profile', { path });
+}
+
+export function listAvailableIccProfiles() {
+  return invokeTauri<AvailableIccProfileDto[]>('list_available_icc_profiles');
+}
+
+export function getRoomIccProfile(roomId: string) {
+  return invokeTauri<StoredIccProfile | null>('get_room_icc_profile', { roomId });
 }
 
 export function deleteRoom(roomId: string) {

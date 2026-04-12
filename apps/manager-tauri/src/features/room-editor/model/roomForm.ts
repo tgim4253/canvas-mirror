@@ -1,7 +1,9 @@
 import type {
+  AvailableIccProfileDto,
   CreateRoomInput,
   DetectionMode,
   OutputResolution,
+  StoredIccProfile,
   UpdateRoomInput,
 } from '../../../shared/type';
 import type { RoomCardView } from '../../../entities/room/model';
@@ -12,6 +14,7 @@ export const MODE_OPTIONS = [
 ];
 
 export type ResolutionPreset = 'source' | 'hd' | 'fhd' | 'qhd' | 'uhd' | 'custom';
+export type IccProfileSource = 'system' | 'file';
 
 export const RESOLUTION_PRESETS = {
   hd: { max_width: 1280, max_height: 720, labelKey: 'roomForm.resolution.hd' },
@@ -33,6 +36,11 @@ export type RoomFormDraft = {
   name: string;
   detection_enabled: boolean;
   target_path: string;
+  icc_profile_enabled: boolean;
+  icc_profile_source: IccProfileSource;
+  icc_profile_system_id: string | null;
+  icc_profile_name: string;
+  icc_profile_bytes: string | null;
   mode: DetectionMode;
   interval_ms: string;
   debounce_ms: string;
@@ -44,7 +52,14 @@ export type RoomFormDraft = {
 
 export type RoomFormFieldErrors = Partial<
   Record<
-    'name' | 'target_path' | 'interval_ms' | 'debounce_ms' | 'stabilize_ms' | 'max_width' | 'max_height',
+    | 'name'
+    | 'target_path'
+    | 'icc_profile'
+    | 'interval_ms'
+    | 'debounce_ms'
+    | 'stabilize_ms'
+    | 'max_width'
+    | 'max_height',
     string
   >
 >;
@@ -67,11 +82,20 @@ const NUMERIC_FIELD_INVALID_KEYS: Record<NumericField, string> = {
   maxHeight: 'roomForm.error.maxHeightInvalid',
 };
 
-export function createEmptyDraft(): RoomFormDraft {
+export function createEmptyDraft(
+  availableIccProfiles: AvailableIccProfileDto[] = [],
+): RoomFormDraft {
+  const defaultSystemProfile = defaultAvailableIccProfile(availableIccProfiles);
+
   return {
     name: '',
     detection_enabled: true,
     target_path: '',
+    icc_profile_enabled: defaultSystemProfile !== null,
+    icc_profile_source: defaultSystemProfile ? 'system' : 'file',
+    icc_profile_system_id: defaultSystemProfile?.id ?? null,
+    icc_profile_name: '',
+    icc_profile_bytes: null,
     mode: 'watch',
     interval_ms: '2000',
     debounce_ms: '0',
@@ -120,13 +144,27 @@ function resolveResolutionPreset(
   };
 }
 
-export function createDraftFromRoom(room: RoomCardView): RoomFormDraft {
+export function createDraftFromRoom(
+  room: RoomCardView,
+  configuredProfile: StoredIccProfile | null,
+  availableIccProfiles: AvailableIccProfileDto[] = [],
+): RoomFormDraft {
   const resolvedResolution = resolveResolutionPreset(room.room.room.resolution);
+  const matchingSystemProfile =
+    configuredProfile ? findMatchingAvailableIccProfile(configuredProfile, availableIccProfiles) : null;
+  const defaultSystemProfile = defaultAvailableIccProfile(availableIccProfiles);
+  const useFileSource = Boolean(configuredProfile && !matchingSystemProfile);
 
   return {
     name: room.room.room.name,
     detection_enabled: room.room.room.detection_enabled,
     target_path: room.target_path,
+    icc_profile_enabled: room.room.room.icc_profile_enabled,
+    icc_profile_source: useFileSource ? 'file' : defaultSystemProfile ? 'system' : 'file',
+    icc_profile_system_id:
+      matchingSystemProfile?.id ?? defaultSystemProfile?.id ?? null,
+    icc_profile_name: useFileSource ? configuredProfile?.name ?? '' : '',
+    icc_profile_bytes: useFileSource ? configuredProfile?.bytes ?? null : null,
     mode: room.room.room.mode,
     interval_ms: String(room.room.room.interval_ms),
     debounce_ms: String(room.room.room.debounce_ms),
@@ -134,6 +172,36 @@ export function createDraftFromRoom(room: RoomCardView): RoomFormDraft {
     resolution_preset: resolvedResolution.resolution_preset,
     max_width: resolvedResolution.max_width,
     max_height: resolvedResolution.max_height,
+  };
+}
+
+export function syncDraftWithAvailableIccProfiles(
+  draft: RoomFormDraft,
+  availableIccProfiles: AvailableIccProfileDto[],
+): RoomFormDraft {
+  if (draft.icc_profile_source === 'file') {
+    return draft;
+  }
+
+  const defaultSystemProfile = defaultAvailableIccProfile(availableIccProfiles);
+  if (!defaultSystemProfile) {
+    return {
+      ...draft,
+      icc_profile_source: 'file',
+      icc_profile_system_id: null,
+    };
+  }
+
+  if (
+    draft.icc_profile_system_id &&
+    availableIccProfiles.some(profile => profile.id === draft.icc_profile_system_id)
+  ) {
+    return draft;
+  }
+
+  return {
+    ...draft,
+    icc_profile_system_id: defaultSystemProfile.id,
   };
 }
 
@@ -156,6 +224,44 @@ export function deriveRoomNameFromTargetPath(targetPath: string): string {
   }
 
   return fileName.slice(0, extensionIndex);
+}
+
+function defaultAvailableIccProfile(
+  availableIccProfiles: AvailableIccProfileDto[],
+): AvailableIccProfileDto | null {
+  return availableIccProfiles.find(profile => profile.is_primary) ?? availableIccProfiles[0] ?? null;
+}
+
+function findMatchingAvailableIccProfile(
+  configuredProfile: StoredIccProfile,
+  availableIccProfiles: AvailableIccProfileDto[],
+): AvailableIccProfileDto | null {
+  return (
+    availableIccProfiles.find(profile => profile.profile.bytes === configuredProfile.bytes) ??
+    availableIccProfiles.find(profile => profile.profile.name === configuredProfile.name) ??
+    null
+  );
+}
+
+function resolveSelectedIccProfile(
+  draft: RoomFormDraft,
+  availableIccProfiles: AvailableIccProfileDto[],
+): StoredIccProfile | null {
+  if (draft.icc_profile_source === 'file') {
+    if (!draft.icc_profile_name.trim() || !draft.icc_profile_bytes) {
+      return null;
+    }
+
+    return {
+      name: draft.icc_profile_name.trim(),
+      bytes: draft.icc_profile_bytes,
+    };
+  }
+
+  const selectedProfile = availableIccProfiles.find(
+    profile => profile.id === draft.icc_profile_system_id,
+  );
+  return selectedProfile?.profile ?? null;
 }
 
 function readPositiveInteger(field: NumericField, value: string, minimum: number) {
@@ -203,18 +309,47 @@ function buildSharedRoomInput(draft: RoomFormDraft) {
     debounce_ms: readPositiveInteger('debounce', draft.debounce_ms, 0),
     stabilize_ms: readPositiveInteger('stabilize', draft.stabilize_ms, 0),
     resolution,
+    icc_profile_enabled: draft.icc_profile_enabled,
   };
 }
 
-export function buildCreateRoomInput(draft: RoomFormDraft): CreateRoomInput {
-  return buildSharedRoomInput(draft);
+export function buildCreateRoomInput(
+  draft: RoomFormDraft,
+  availableIccProfiles: AvailableIccProfileDto[],
+): CreateRoomInput {
+  return {
+    ...buildSharedRoomInput(draft),
+    icc_profile: buildIccProfileInput(draft, availableIccProfiles),
+  };
 }
 
-export function buildUpdateRoomInput(draft: RoomFormDraft): UpdateRoomInput {
-  return buildSharedRoomInput(draft);
+export function buildUpdateRoomInput(
+  draft: RoomFormDraft,
+  availableIccProfiles: AvailableIccProfileDto[],
+): UpdateRoomInput {
+  return {
+    ...buildSharedRoomInput(draft),
+    icc_profile: buildIccProfileInput(draft, availableIccProfiles),
+  };
 }
 
-export function validateRoomDraft(draft: RoomFormDraft): RoomFormFieldErrors {
+function buildIccProfileInput(
+  draft: RoomFormDraft,
+  availableIccProfiles: AvailableIccProfileDto[],
+): StoredIccProfile | null {
+  const iccProfile = resolveSelectedIccProfile(draft, availableIccProfiles);
+
+  if (draft.icc_profile_enabled && !iccProfile) {
+    throw new Error('roomForm.error.iccProfileRequired');
+  }
+
+  return iccProfile;
+}
+
+export function validateRoomDraft(
+  draft: RoomFormDraft,
+  availableIccProfiles: AvailableIccProfileDto[],
+): RoomFormFieldErrors {
   const errors: RoomFormFieldErrors = {};
 
   if (!draft.name.trim()) {
@@ -222,6 +357,9 @@ export function validateRoomDraft(draft: RoomFormDraft): RoomFormFieldErrors {
   }
   if (!draft.target_path.trim()) {
     errors.target_path = 'roomForm.error.targetPathRequired';
+  }
+  if (draft.icc_profile_enabled && !resolveSelectedIccProfile(draft, availableIccProfiles)) {
+    errors.icc_profile = 'roomForm.error.iccProfileRequired';
   }
 
   if (draft.mode === 'interval') {
@@ -281,6 +419,14 @@ export function resolveRoomFormFieldErrors(message: string): RoomFormFieldErrors
     message === 'Target path is required.'
   ) {
     return { target_path: message };
+  }
+
+  if (
+    message === 'roomForm.error.iccProfileRequired' ||
+    message === 'ICC profile is required.' ||
+    message.includes('has ICC enabled but no ICC profile is configured')
+  ) {
+    return { icc_profile: message };
   }
 
   if (

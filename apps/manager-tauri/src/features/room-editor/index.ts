@@ -5,6 +5,7 @@ export {
   createEmptyDraft,
   deriveRoomNameFromTargetPath,
   resolveRoomFormFieldErrors,
+  syncDraftWithAvailableIccProfiles,
   validateRoomDraft,
   type RoomFormFieldErrors,
   type RoomFormDraft,

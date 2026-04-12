@@ -119,6 +119,19 @@
     flex: none;
   }
 
+  .room-editor-modal__file-actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .room-editor-modal__field-error {
+    margin: 0;
+    color: var(--semantic-colors-status-error);
+    font-family: var(--font-mono);
+    font-size: var(--type-text-xs-size);
+    line-height: var(--type-text-xs-line-height);
+  }
+
   .room-editor-modal__checkbox {
     border-top: 1px solid var(--semantic-colors-border-primary);
     padding-top: 16px;

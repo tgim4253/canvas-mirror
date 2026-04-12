@@ -1,10 +1,12 @@
 import type {
+  AvailableIccProfileDto,
   DetectionMode,
   IsoDateTimeString,
   LogEntryDto,
   OutputResolution,
   RoomDto,
   SnapshotMetaDto,
+  StoredIccProfile,
   UrlString,
 } from './canvasMirror';
 
@@ -45,6 +47,8 @@ export type CreateRoomInput = {
   debounce_ms: number;
   stabilize_ms: number;
   resolution: OutputResolution;
+  icc_profile_enabled: boolean;
+  icc_profile?: StoredIccProfile | null;
 };
 
 export type UpdateRoomInput = {
@@ -56,7 +60,11 @@ export type UpdateRoomInput = {
   debounce_ms: number;
   stabilize_ms: number;
   resolution: OutputResolution;
+  icc_profile_enabled: boolean;
+  icc_profile?: StoredIccProfile | null;
 };
+
+export type ListAvailableIccProfilesResponse = AvailableIccProfileDto[];
 
 export type ServerSettingsDto = {
   bind_host: string;

@@ -2,10 +2,13 @@ import { startTransition, type FormEvent, useEffect, useState } from 'react';
 import {
   createRoom,
   deleteRoom,
+  getRoomIccProfile,
   getServerStatus,
   listenRoomPreviewsChanged,
   listenRoomsChanged,
   listenRuntimeLogsChanged,
+  loadIccProfile,
+  listAvailableIccProfiles,
   listRooms,
   setRoomRunning,
   updateRoom,
@@ -20,6 +23,7 @@ import {
   deriveRoomNameFromTargetPath,
   resolveRoomFormFieldErrors,
   RoomEditorModal,
+  syncDraftWithAvailableIccProfiles,
   type RoomFormFieldErrors,
   type RoomFormDraft,
   validateRoomDraft,
@@ -41,8 +45,13 @@ import {
   validateServerSettingsDraft,
 } from '../../features/server-settings';
 import { useI18n } from '../../shared/i18n';
-import { pickFilePath } from '../../shared/lib/tauri';
-import type { LogEntryDto, RoomPreviewDto, RuntimeLogsChangedDto } from '../../shared/type';
+import { pickFilePath, pickIccProfilePath } from '../../shared/lib/tauri';
+import type {
+  AvailableIccProfileDto,
+  LogEntryDto,
+  RoomPreviewDto,
+  RuntimeLogsChangedDto,
+} from '../../shared/type';
 import { Button, Icon } from '../../shared/ui';
 import './studio.css';
 
@@ -182,6 +191,14 @@ function applyCreateDraftNameFallback(draft: RoomFormDraft): RoomFormDraft {
   };
 }
 
+async function loadAvailableIccProfilesForEditor() {
+  try {
+    return await listAvailableIccProfiles();
+  } catch {
+    return [];
+  }
+}
+
 export function StudioPage() {
   const { t, translateMaybe } = useI18n();
   const [rooms, setRooms] = useState<RoomCardView[]>([]);
@@ -193,10 +210,12 @@ export function StudioPage() {
   const [pageError, setPageError] = useState<string | null>(null);
   const [editorState, setEditorState] = useState<EditorState | null>(null);
   const [draft, setDraft] = useState<RoomFormDraft>(createEmptyDraft());
+  const [availableIccProfiles, setAvailableIccProfiles] = useState<AvailableIccProfileDto[]>([]);
   const [editorFieldErrors, setEditorFieldErrors] = useState<RoomFormFieldErrors>({});
   const [editorError, setEditorError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [pickingTargetPath, setPickingTargetPath] = useState(false);
+  const [pickingIccProfile, setPickingIccProfile] = useState(false);
   const [deleteTargetRoom, setDeleteTargetRoom] = useState<RoomCardView | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deletingRoom, setDeletingRoom] = useState(false);
@@ -347,22 +366,31 @@ export function StudioPage() {
     }
   }, [roomListViewMode]);
 
-  const openCreateModal = () => {
+  const openCreateModal = async () => {
+    const nextAvailableIccProfiles = await loadAvailableIccProfilesForEditor();
+
+    setAvailableIccProfiles(nextAvailableIccProfiles);
     setEditorState({ mode: 'create' });
-    setDraft(createEmptyDraft());
+    setDraft(createEmptyDraft(nextAvailableIccProfiles));
     setEditorFieldErrors({});
     setEditorError(null);
   };
 
-  const openEditModal = (room: RoomCardView) => {
+  const openEditModal = async (room: RoomCardView) => {
+    const [nextAvailableIccProfiles, configuredIccProfile] = await Promise.all([
+      loadAvailableIccProfilesForEditor(),
+      getRoomIccProfile(room.room.room.id),
+    ]);
+
+    setAvailableIccProfiles(nextAvailableIccProfiles);
     setEditorState({ mode: 'edit', room });
-    setDraft(createDraftFromRoom(room));
+    setDraft(createDraftFromRoom(room, configuredIccProfile, nextAvailableIccProfiles));
     setEditorFieldErrors({});
     setEditorError(null);
   };
 
   const closeEditor = () => {
-    if (submitting || pickingTargetPath) {
+    if (submitting || pickingTargetPath || pickingIccProfile) {
       return;
     }
 
@@ -404,19 +432,52 @@ export function StudioPage() {
     }
   };
 
+  const handlePickIccProfile = async () => {
+    setEditorFieldErrors(current => ({ ...current, icc_profile: undefined }));
+    setEditorError(null);
+    setPickingIccProfile(true);
+
+    try {
+      const selectedPath = await pickIccProfilePath();
+      if (!selectedPath) {
+        return;
+      }
+
+      const iccProfile = await loadIccProfile(selectedPath);
+      setDraft(current => ({
+        ...current,
+        icc_profile_source: 'file',
+        icc_profile_system_id: null,
+        icc_profile_name: iccProfile.name,
+        icc_profile_bytes: iccProfile.bytes,
+      }));
+    } catch (error) {
+      setEditorError(describeError(error));
+    } finally {
+      setPickingIccProfile(false);
+    }
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const normalizedDraft =
-      editorState?.mode === 'create' ? applyCreateDraftNameFallback(draft) : draft;
+      editorState?.mode === 'create'
+        ? applyCreateDraftNameFallback(syncDraftWithAvailableIccProfiles(draft, availableIccProfiles))
+        : syncDraftWithAvailableIccProfiles(draft, availableIccProfiles);
 
     if (normalizedDraft !== draft) {
       setDraft(normalizedDraft);
     }
 
-    const validationErrors = validateRoomDraft(normalizedDraft);
+    const validationErrors = validateRoomDraft(normalizedDraft, availableIccProfiles);
     if (Object.keys(validationErrors).length > 0) {
       setEditorFieldErrors(validationErrors);
-      setEditorError(validationErrors.target_path ?? null);
+      setEditorError(
+        validationErrors.target_path ??
+          validationErrors.icc_profile ??
+          validationErrors.name ??
+          null,
+      );
       return;
     }
 
@@ -426,9 +487,12 @@ export function StudioPage() {
 
     try {
       if (editorState?.mode === 'edit') {
-        await updateRoom(editorState.room.room.room.id, buildUpdateRoomInput(normalizedDraft));
+        await updateRoom(
+          editorState.room.room.room.id,
+          buildUpdateRoomInput(normalizedDraft, availableIccProfiles),
+        );
       } else {
-        await createRoom(buildCreateRoomInput(normalizedDraft));
+        await createRoom(buildCreateRoomInput(normalizedDraft, availableIccProfiles));
       }
 
       setEditorState(null);
@@ -438,7 +502,9 @@ export function StudioPage() {
 
       if (Object.keys(fieldErrors).length > 0) {
         setEditorFieldErrors(fieldErrors);
-        setEditorError(fieldErrors.target_path ?? null);
+        setEditorError(
+          fieldErrors.target_path ?? fieldErrors.icc_profile ?? fieldErrors.name ?? null,
+        );
       } else {
         setEditorError(message);
       }
@@ -583,7 +649,7 @@ export function StudioPage() {
             <Icon name="setting" size="xs" aria-hidden />
             <span>{t('studio.serverButton')}</span>
           </Button>
-          <Button className="studio-dashboard__action" size="sm" onClick={openCreateModal}>
+          <Button className="studio-dashboard__action" size="sm" onClick={() => void openCreateModal()}>
             <Icon name="plus" size="xs" aria-hidden />
             <span>{t('studio.roomButton')}</span>
           </Button>
@@ -608,7 +674,7 @@ export function StudioPage() {
         <section className="studio-dashboard__empty" aria-live="polite">
           <Icon name="grid" size="lg" aria-hidden />
           <p>{t('studio.noRooms')}</p>
-          <Button size="sm" onClick={openCreateModal}>
+          <Button size="sm" onClick={() => void openCreateModal()}>
             {t('studio.createFirstRoom')}
           </Button>
         </section>
@@ -618,7 +684,7 @@ export function StudioPage() {
             <RoomCard
               key={room.room.room.id}
               {...toRoomCardProps(room)}
-              onEdit={() => openEditModal(room)}
+              onEdit={() => void openEditModal(room)}
               onToggleRunning={() => void handleToggleRunning(room)}
               onDelete={() => handleDelete(room)}
               onShowQr={
@@ -635,7 +701,7 @@ export function StudioPage() {
             rooms={rooms}
             expandedRoomId={expandedRoomId}
             onExpandedRoomIdChange={setExpandedRoomId}
-            onEdit={openEditModal}
+            onEdit={room => void openEditModal(room)}
             onToggleRunning={room => void handleToggleRunning(room)}
             onDelete={handleDelete}
             onShowQr={(room, linkIndex) => setQrSelection({ room, linkIndex })}
@@ -683,13 +749,16 @@ export function StudioPage() {
         }
         formId={ROOM_FORM_ID}
         draft={draft}
+        availableIccProfiles={availableIccProfiles}
         fieldErrors={editorFieldErrors}
         editorError={editorError}
         submitting={submitting}
         pickingTargetPath={pickingTargetPath}
+        pickingIccProfile={pickingIccProfile}
         onClose={closeEditor}
         onSubmit={handleSubmit}
         onPickTargetPath={() => void handlePickTargetPath()}
+        onPickIccProfile={() => void handlePickIccProfile()}
         onDraftChange={updater => {
           setDraft(current => updater(current));
           setEditorFieldErrors({});

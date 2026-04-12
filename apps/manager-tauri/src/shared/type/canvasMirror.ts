@@ -15,6 +15,18 @@ export type OutputResolution =
       max_height: number;
     };
 
+export type StoredIccProfile = {
+  name: string;
+  bytes: string;
+};
+
+export type AvailableIccProfileDto = {
+  id: string;
+  display_name: string;
+  is_primary: boolean;
+  profile: StoredIccProfile;
+};
+
 export const ROOM_STATES = ['running', 'paused', 'error'] as const;
 export type RoomState = (typeof ROOM_STATES)[number];
 
@@ -56,6 +68,8 @@ export type RoomSummaryDto = {
   debounce_ms: number;
   stabilize_ms: number;
   resolution: OutputResolution;
+  icc_profile_enabled: boolean;
+  icc_profile_name: string | null;
 };
 
 export type RoomDto = {

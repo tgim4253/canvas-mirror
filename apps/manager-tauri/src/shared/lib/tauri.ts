@@ -55,3 +55,34 @@ export async function pickFilePath() {
 
   return Array.isArray(selected) ? (selected[0] ?? null) : selected;
 }
+
+export async function pickIccProfilePath() {
+  if (!isTauriRuntime()) {
+    throw new Error('tauri.error.filePickerOnlyInTauri');
+  }
+
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const selected = await open({
+    directory: false,
+    multiple: false,
+    title: translateForLocale(
+      detectPreferredLocale(),
+      'tauri.dialog.selectIccProfile',
+    ),
+    filters: [
+      {
+        name: translateForLocale(
+          detectPreferredLocale(),
+          'tauri.dialog.iccProfileFiles',
+        ),
+        extensions: ['icc', 'icm'],
+      },
+    ],
+  });
+
+  if (selected === null) {
+    return null;
+  }
+
+  return Array.isArray(selected) ? (selected[0] ?? null) : selected;
+}
