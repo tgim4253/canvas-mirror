@@ -11,6 +11,7 @@ clip2preview.workspace = true
 crc32fast = "1"
 flate2 = "1"
 image.workspace = true
+lcms2.workspace = true
 canvas-mirror-store = { path = "../canvas-mirror-store" }
 thiserror.workspace = true
 tokio.workspace = true

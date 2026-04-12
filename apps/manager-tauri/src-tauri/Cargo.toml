@@ -20,6 +20,7 @@ canvas-mirror-core = { path = "../../../crates/canvas-mirror-core" }
 canvas-mirror-host = { path = "../../../crates/canvas-mirror-host" }
 canvas-mirror-icc = { path = "../../../crates/canvas-mirror-icc" }
 canvas-mirror-model = { path = "../../../crates/canvas-mirror-model" }
+canvas-mirror-preview = { path = "../../../crates/canvas-mirror-preview" }
 canvas-mirror-store = { path = "../../../crates/canvas-mirror-store" }
 canvas-mirror-watcher = { path = "../../../crates/canvas-mirror-watcher" }
 chrono = { version = "0.4", features = ["clock", "serde"] }

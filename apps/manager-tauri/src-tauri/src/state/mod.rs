@@ -10,12 +10,13 @@ use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use canvas_mirror_config::ServerConfig;
 use canvas_mirror_core::{ServerCore, SnapshotBuffer, UpdateRoomCommand};
 use canvas_mirror_host::{
-    generate_room_qr_svg, load_viewer_html, preferred_viewer_url, room_viewer_urls,
-    spawn_snapshot_pipeline, start_transport_server, viewer_public_urls, RuntimeLogFile,
-    TransportRuntime,
+    generate_room_qr_svg, load_viewer_html, preferred_viewer_url, process_room_event,
+    room_viewer_urls, spawn_snapshot_pipeline, start_transport_server, viewer_public_urls,
+    RuntimeLogFile, TransportRuntime,
 };
 use canvas_mirror_icc::list_display_icc_profiles;
 use canvas_mirror_model::{LogEntryDto, RoomDto, ServerStatusDto, SnapshotMetaDto};
+use canvas_mirror_preview::PreviewGenerator;
 use canvas_mirror_store::{DetectionMode, OutputResolution, RoomRecord, StoredIccProfile};
 use canvas_mirror_watcher::{WatcherRuntime, WatcherService};
 use chrono::{DateTime, Utc};
@@ -141,7 +142,10 @@ impl StudioRuntime {
     }
 
     pub fn room_icc_profile(&self, room_id: &str) -> Result<Option<StoredIccProfile>> {
-        Ok(self.core.room_record(room_id).and_then(|room| room.icc_profile))
+        Ok(self
+            .core
+            .room_record(room_id)
+            .and_then(|room| room.icc_profile))
     }
 
     pub fn create_room(&self, input: CreateRoomInput) -> Result<ManagedRoomDto> {
@@ -164,6 +168,7 @@ impl StudioRuntime {
         self.core
             .create_room(room)
             .context("failed to create room")?;
+        self.refresh_room_preview(&room_id);
 
         self.managed_room("failed to load created room", &room_id)
     }
@@ -185,6 +190,7 @@ impl StudioRuntime {
         self.core
             .update_room(room_id, command)
             .with_context(|| format!("failed to update room '{room_id}'"))?;
+        self.refresh_room_preview(room_id);
 
         self.managed_room("failed to load updated room", room_id)
     }
@@ -206,6 +212,7 @@ impl StudioRuntime {
             self.core
                 .resume_room(room_id)
                 .with_context(|| format!("failed to resume room '{room_id}'"))?;
+            self.refresh_room_preview(room_id);
         } else {
             self.core
                 .pause_room(room_id)
@@ -390,6 +397,16 @@ impl StudioRuntime {
                 }
             }
         })
+    }
+
+    fn refresh_room_preview(&self, room_id: &str) {
+        let store_path = self.core.config().store_path;
+        tauri::async_runtime::block_on(process_room_event(
+            &self.core,
+            &store_path,
+            &PreviewGenerator,
+            room_id,
+        ));
     }
 
     fn managed_room(&self, error_context: &str, room_id: &str) -> Result<ManagedRoomDto> {
@@ -927,6 +944,103 @@ mod tests {
             assert!(
                 Instant::now() < deadline,
                 "expected snapshot pipeline to publish a preview for '{room_id}'"
+            );
+            sleep(Duration::from_millis(25));
+        }
+    }
+
+    #[test]
+    fn runtime_refreshes_snapshot_when_room_settings_change() {
+        let dir = tempdir().expect("temp dir should exist");
+        let config_path = dir.path().join("studio/config/canvas-mirror-config.toml");
+        write_test_config(&config_path, reserve_local_port());
+        let runtime = StudioRuntime::load_from_config_path(
+            &config_path,
+            None,
+            create_test_log_file(dir.path()),
+        )
+        .expect("runtime should load");
+        let sample_png = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("icons/32x32.png");
+
+        let created = runtime
+            .create_room(CreateRoomInput {
+                name: "Room A".to_string(),
+                detection_enabled: true,
+                target_path: sample_png.display().to_string(),
+                mode: DetectionMode::Watch,
+                interval_ms: 2_000,
+                debounce_ms: 0,
+                stabilize_ms: 0,
+                resolution: OutputResolution::Source,
+                icc_profile_enabled: false,
+                icc_profile: None,
+            })
+            .expect("room should be created");
+        let room_id = created.room.room.id.clone();
+        let initial_deadline = Instant::now() + Duration::from_secs(2);
+
+        loop {
+            let room = runtime.core.room(&room_id).expect("room should exist");
+            let Some(snapshot) = room.latest_snapshot.as_ref() else {
+                assert!(
+                    Instant::now() < initial_deadline,
+                    "expected initial snapshot for '{room_id}'"
+                );
+                sleep(Duration::from_millis(25));
+                continue;
+            };
+
+            if snapshot.width == Some(32) && snapshot.height == Some(32) {
+                break;
+            }
+
+            assert!(
+                Instant::now() < initial_deadline,
+                "expected initial snapshot dimensions for '{room_id}'"
+            );
+            sleep(Duration::from_millis(25));
+        }
+
+        runtime
+            .update_room(
+                &room_id,
+                UpdateRoomInput {
+                    name: "Room A".to_string(),
+                    detection_enabled: true,
+                    target_path: sample_png.display().to_string(),
+                    mode: DetectionMode::Watch,
+                    interval_ms: 2_000,
+                    debounce_ms: 0,
+                    stabilize_ms: 0,
+                    resolution: OutputResolution::Contain {
+                        max_width: 8,
+                        max_height: 8,
+                    },
+                    icc_profile_enabled: false,
+                    icc_profile: None,
+                },
+            )
+            .expect("room should update");
+
+        let update_deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            let room = runtime.core.room(&room_id).expect("room should exist");
+            let Some(snapshot) = room.latest_snapshot.as_ref() else {
+                assert!(
+                    Instant::now() < update_deadline,
+                    "expected updated snapshot for '{room_id}'"
+                );
+                sleep(Duration::from_millis(25));
+                continue;
+            };
+
+            if snapshot.width == Some(8) && snapshot.height == Some(8) {
+                break;
+            }
+
+            assert!(
+                Instant::now() < update_deadline,
+                "expected updated snapshot dimensions for '{room_id}'"
             );
             sleep(Duration::from_millis(25));
         }

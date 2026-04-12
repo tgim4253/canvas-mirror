@@ -4,6 +4,7 @@ use canvas_mirror_store::{OutputResolution, StoredIccProfile};
 use crc32fast::Hasher;
 use flate2::{write::ZlibEncoder, Compression};
 use image::{imageops::FilterType, DynamicImage, GenericImageView, ImageFormat};
+use lcms2::{Flags, Intent, PixelFormat, Profile, Transform};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -20,6 +21,8 @@ pub enum PreviewError {
     PsdPreview { path: String, reason: String },
     #[error("unsupported preview input: {path}")]
     UnsupportedInput { path: String },
+    #[error("failed to apply ICC color management: {reason}")]
+    ColorManagement { reason: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -252,13 +255,141 @@ fn apply_generated_preview_icc(
         return preview;
     };
 
-    preview.bytes = apply_icc_profile_to_preview_bytes(
-        preview.bytes,
-        &preview.mime_type,
-        preview.width.zip(preview.height),
-        icc_profile,
-    );
-    preview
+    match icc_application_strategy(&icc_profile.bytes) {
+        IccApplicationStrategy::EmbedOriginal => {
+            preview.bytes = apply_icc_profile_to_preview_bytes(
+                preview.bytes,
+                &preview.mime_type,
+                preview.width.zip(preview.height),
+                icc_profile,
+            );
+            preview
+        }
+        IccApplicationStrategy::SoftProofToSrgb => {
+            match soft_proof_preview_to_srgb(preview.clone(), icc_profile) {
+                Ok(transformed) => transformed,
+                Err(_) => preview,
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IccApplicationStrategy {
+    EmbedOriginal,
+    SoftProofToSrgb,
+}
+
+fn icc_application_strategy(icc_bytes: &[u8]) -> IccApplicationStrategy {
+    let device_class = icc_signature(icc_bytes, 12);
+    let color_space = icc_signature(icc_bytes, 16);
+
+    if device_class == Some(*b"mntr") && color_space == Some(*b"RGB ") {
+        return IccApplicationStrategy::EmbedOriginal;
+    }
+
+    if device_class == Some(*b"prtr")
+        || color_space == Some(*b"CMYK")
+        || color_space == Some(*b"GRAY")
+    {
+        return IccApplicationStrategy::SoftProofToSrgb;
+    }
+
+    IccApplicationStrategy::EmbedOriginal
+}
+
+fn icc_signature(bytes: &[u8], offset: usize) -> Option<[u8; 4]> {
+    bytes.get(offset..offset + 4)?.try_into().ok()
+}
+
+fn soft_proof_preview_to_srgb(
+    preview: GeneratedPreview,
+    icc_profile: &StoredIccProfile,
+) -> Result<GeneratedPreview, PreviewError> {
+    let image = image::load_from_memory(&preview.bytes)?;
+    let rgba = image.to_rgba8();
+    let transformed = soft_proof_rgba_to_srgb(&rgba, &icc_profile.bytes)?;
+    let transformed_width = transformed.width();
+    let transformed_height = transformed.height();
+    let transformed = DynamicImage::ImageRgba8(transformed);
+    let (bytes, mime_type) = encode_image(&transformed, &preview.mime_type)?;
+
+    let mut preview = GeneratedPreview {
+        bytes,
+        mime_type,
+        width: Some(transformed_width),
+        height: Some(transformed_height),
+    };
+
+    if let Some(srgb_profile) = srgb_profile_for_embedding() {
+        preview.bytes = apply_icc_profile_to_preview_bytes(
+            preview.bytes,
+            &preview.mime_type,
+            Some((transformed_width, transformed_height)),
+            &srgb_profile,
+        );
+    }
+
+    Ok(preview)
+}
+
+fn soft_proof_rgba_to_srgb(
+    image: &image::RgbaImage,
+    proof_icc_bytes: &[u8],
+) -> Result<image::RgbaImage, PreviewError> {
+    let input_profile = Profile::new_srgb();
+    let output_profile = Profile::new_srgb();
+    let proof_profile =
+        Profile::new_icc(proof_icc_bytes).map_err(|error| PreviewError::ColorManagement {
+            reason: format!("failed to parse selected ICC profile: {error:?}"),
+        })?;
+
+    let transform = Transform::<[u8; 4], [u8; 4]>::new_proofing(
+        &input_profile,
+        PixelFormat::RGBA_8,
+        &output_profile,
+        PixelFormat::RGBA_8,
+        &proof_profile,
+        Intent::Perceptual,
+        Intent::RelativeColorimetric,
+        Flags::SOFT_PROOFING | Flags::BLACKPOINT_COMPENSATION | Flags::COPY_ALPHA,
+    )
+    .map_err(|error| PreviewError::ColorManagement {
+        reason: format!("failed to create proof transform: {error:?}"),
+    })?;
+
+    let mut pixels = rgba_bytes_to_pixels(image.as_raw());
+    transform.transform_in_place(&mut pixels);
+    let bytes = rgba_pixels_to_bytes(pixels);
+
+    image::RgbaImage::from_raw(image.width(), image.height(), bytes).ok_or_else(|| {
+        PreviewError::ColorManagement {
+            reason: "failed to rebuild transformed RGBA buffer".to_string(),
+        }
+    })
+}
+
+fn rgba_bytes_to_pixels(bytes: &[u8]) -> Vec<[u8; 4]> {
+    bytes
+        .chunks_exact(4)
+        .map(|chunk| [chunk[0], chunk[1], chunk[2], chunk[3]])
+        .collect()
+}
+
+fn rgba_pixels_to_bytes(pixels: Vec<[u8; 4]>) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(pixels.len() * 4);
+    for pixel in pixels {
+        bytes.extend_from_slice(&pixel);
+    }
+    bytes
+}
+
+fn srgb_profile_for_embedding() -> Option<StoredIccProfile> {
+    let bytes = Profile::new_srgb().icc().ok()?;
+    Some(StoredIccProfile {
+        name: "sRGB".to_string(),
+        bytes,
+    })
 }
 
 fn apply_icc_profile_to_preview_bytes(
@@ -1030,6 +1161,8 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+    use image::{Rgba, RgbaImage};
+    use lcms2::{white_point_from_temp, ProfileClassSignature, ToneCurve};
 
     #[tokio::test]
     async fn generates_static_png_source_preview() {
@@ -1334,6 +1467,57 @@ mod tests {
         assert_eq!(webp_iccp_chunk_count(&preview.bytes), 1);
     }
 
+    #[test]
+    fn classifies_monitor_rgb_profiles_as_embed_only() {
+        let mut bytes = vec![0; 24];
+        bytes[12..16].copy_from_slice(b"mntr");
+        bytes[16..20].copy_from_slice(b"RGB ");
+
+        assert_eq!(
+            icc_application_strategy(&bytes),
+            IccApplicationStrategy::EmbedOriginal
+        );
+    }
+
+    #[test]
+    fn classifies_printer_cmyk_profiles_as_soft_proof() {
+        let mut bytes = vec![0; 24];
+        bytes[12..16].copy_from_slice(b"prtr");
+        bytes[16..20].copy_from_slice(b"CMYK");
+
+        assert_eq!(
+            icc_application_strategy(&bytes),
+            IccApplicationStrategy::SoftProofToSrgb
+        );
+    }
+
+    #[tokio::test]
+    async fn soft_proofs_printer_profiles_into_srgb_preview() {
+        let dir = tempfile::tempdir().expect("temp dir should exist");
+        let image_path = dir.path().join("proof.png");
+        write_colored_sample_png(&image_path);
+        let original_bytes = fs::read(&image_path).expect("png bytes should read");
+        let proof_profile = sample_printer_gray_icc_profile();
+
+        let preview = PreviewGenerator
+            .generate(&image_path, &OutputResolution::Source, Some(&proof_profile))
+            .await
+            .expect("proof preview should generate");
+
+        assert_ne!(preview.bytes, original_bytes);
+        assert!(png_has_chunk(&preview.bytes, PNG_ICCP_CHUNK_TYPE));
+
+        let transformed = image::load_from_memory(&preview.bytes)
+            .expect("proofed image should decode")
+            .to_rgba8();
+        let first = transformed.get_pixel(0, 0).0;
+        let second = transformed.get_pixel(1, 0).0;
+        assert_eq!(first[0], first[1]);
+        assert_eq!(first[1], first[2]);
+        assert_eq!(second[0], second[1]);
+        assert_eq!(second[1], second[2]);
+    }
+
     fn write_sample_png(path: &Path, width: u32, height: u32) {
         let image = DynamicImage::new_rgba8(width, height);
         image.save(path).expect("sample png should save");
@@ -1349,10 +1533,37 @@ mod tests {
         image.save(path).expect("sample webp should save");
     }
 
+    fn write_colored_sample_png(path: &Path) {
+        let image = RgbaImage::from_fn(2, 1, |x, _| {
+            if x == 0 {
+                Rgba([255, 0, 0, 255])
+            } else {
+                Rgba([0, 255, 0, 255])
+            }
+        });
+        DynamicImage::ImageRgba8(image)
+            .save(path)
+            .expect("colored png should save");
+    }
+
     fn sample_icc_profile() -> StoredIccProfile {
         StoredIccProfile {
             name: "LG ULTRAFINE".to_string(),
             bytes: vec![0, 1, 2, 3],
+        }
+    }
+
+    fn sample_printer_gray_icc_profile() -> StoredIccProfile {
+        let white_point =
+            white_point_from_temp(6504.0).expect("D65 white point should be available");
+        let gamma = ToneCurve::new(1.0);
+        let mut profile =
+            Profile::new_gray(&white_point, &gamma).expect("gray profile should build");
+        profile.set_device_class(ProfileClassSignature::OutputClass);
+
+        StoredIccProfile {
+            name: "Proof Gray".to_string(),
+            bytes: profile.icc().expect("gray profile should serialize"),
         }
     }
 
