@@ -4,6 +4,7 @@ members = [
     "crates/canvas-mirror-config",
     "crates/canvas-mirror-core",
     "crates/canvas-mirror-host",
+    "crates/canvas-mirror-icc",
     "crates/canvas-mirror-preview",
     "crates/canvas-mirror-store",
     "crates/canvas-mirror-model",
