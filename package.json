@@ -1,6 +1,6 @@
 {
   "name": "canvas-mirror-workspace",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "private": true,
   "packageManager": "pnpm@10.13.1",
   "type": "module",
@@ -8,6 +8,7 @@
     "dev": "pnpm --filter @canvas-mirror/manager-tauri dev",
     "build:front": "pnpm --filter @canvas-mirror/manager-tauri build",
     "tauri": "pnpm --filter @canvas-mirror/manager-tauri tauri",
+    "version:bump": "node scripts/bump-version.mjs",
     "ui:demo": "pnpm --filter @canvas-mirror/manager-tauri ui:demo",
     "locale:build": "pnpm --filter @canvas-mirror/scripts translate",
     "locale:xlsx": "pnpm --filter @canvas-mirror/scripts extract-translation"
