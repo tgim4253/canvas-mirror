@@ -1,0 +1,82 @@
+name: release-desktop
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform_name: macos-arm64
+            runner: macos-15
+            rust_target: aarch64-apple-darwin
+            tauri_args: --target aarch64-apple-darwin
+          - platform_name: macos-intel
+            runner: macos-15-intel
+            rust_target: x86_64-apple-darwin
+            tauri_args: --target x86_64-apple-darwin
+          - platform_name: windows-x64
+            runner: windows-2022
+            rust_target: ""
+            tauri_args: ""
+
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.13.1
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add Rust target
+        if: matrix.rust_target != ''
+        run: rustup target add ${{ matrix.rust_target }}
+
+      - name: Cache Rust artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            apps/manager-tauri/src-tauri -> target
+          cache-on-failure: true
+
+      - name: Build and publish unsigned release
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/manager-tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: Canvas Mirror Studio ${{ github.ref_name }}
+          releaseBody: |
+            Automated unsigned desktop release for:
+            - macOS Apple Silicon
+            - macOS Intel
+            - Windows x64
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.tauri_args }}
