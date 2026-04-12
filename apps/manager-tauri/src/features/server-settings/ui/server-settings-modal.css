@@ -100,6 +100,11 @@
     font-weight: 600;
   }
 
+  .server-settings-modal__update-button {
+    flex: none;
+    align-self: flex-start;
+  }
+
   .server-settings-modal__code {
     font-family: var(--font-mono);
     font-size: 0.95em;

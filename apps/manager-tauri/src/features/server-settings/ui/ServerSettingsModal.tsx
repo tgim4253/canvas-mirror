@@ -303,6 +303,7 @@ export function ServerSettingsModal({
                     </p>
                   </div>
                   <Button
+                    className="server-settings-modal__update-button"
                     variant="secondary"
                     size="sm"
                     onClick={onCheckForUpdates}
