@@ -18,14 +18,17 @@ jobs:
             runner: macos-15
             rust_target: aarch64-apple-darwin
             tauri_args: --target aarch64-apple-darwin
+            apple_signing_identity: "-"
           - platform_name: macos-intel
             runner: macos-15-intel
             rust_target: x86_64-apple-darwin
             tauri_args: --target x86_64-apple-darwin
+            apple_signing_identity: "-"
           - platform_name: windows-x64
             runner: windows-2022
             rust_target: ""
             tauri_args: ""
+            apple_signing_identity: ""
 
     runs-on: ${{ matrix.runner }}
 
@@ -64,19 +67,20 @@ jobs:
             apps/manager-tauri/src-tauri -> target
           cache-on-failure: true
 
-      - name: Build and publish unsigned release
+      - name: Build and publish desktop release
         uses: tauri-apps/tauri-action@action-v0.6.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_SIGNING_IDENTITY: ${{ matrix.apple_signing_identity }}
         with:
           projectPath: apps/manager-tauri
           tagName: ${{ github.ref_name }}
           releaseName: Canvas Mirror Studio ${{ github.ref_name }}
           releaseBody: |
-            Automated unsigned desktop release for:
-            - macOS Apple Silicon
-            - macOS Intel
-            - Windows x64
+            Automated desktop release for:
+            - macOS Apple Silicon (ad-hoc signed, not notarized)
+            - macOS Intel (ad-hoc signed, not notarized)
+            - Windows x64 (unsigned)
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.tauri_args }}
