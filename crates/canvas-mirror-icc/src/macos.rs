@@ -3,7 +3,7 @@ use std::{ffi::c_void, ptr::NonNull};
 use objc2::{msg_send, runtime::AnyObject, MainThreadMarker};
 use raw_window_handle::{AppKitWindowHandle, RawWindowHandle};
 
-use crate::DisplayIccProfile;
+use crate::{icc_profile_display_name, DisplayIccProfile};
 
 type CGDirectDisplayID = u32;
 type CGColorSpaceRef = *mut c_void;
@@ -50,13 +50,16 @@ pub(super) fn list_display_icc_profiles() -> Option<Vec<DisplayIccProfile>> {
             .into_iter()
             .filter_map(|display_id| {
                 let icc_profile = icc_profile_for_display(display_id)?;
-                Some(DisplayIccProfile {
-                    display_id: display_id.to_string(),
-                    display_name: if display_id == main_display_id {
+                let display_name = icc_profile_display_name(&icc_profile).unwrap_or_else(|| {
+                    if display_id == main_display_id {
                         format!("Main Display ({display_id})")
                     } else {
                         format!("Display {display_id}")
-                    },
+                    }
+                });
+                Some(DisplayIccProfile {
+                    display_id: display_id.to_string(),
+                    display_name,
                     is_primary: display_id == main_display_id,
                     icc_profile,
                 })

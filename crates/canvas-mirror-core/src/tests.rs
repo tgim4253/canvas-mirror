@@ -2,7 +2,9 @@ use std::{path::PathBuf, thread::sleep, time::Duration};
 
 use canvas_mirror_config::ServerConfig;
 use canvas_mirror_model::{DevicePlatform, DeviceState, LogLevel, RoomState};
-use canvas_mirror_store::{DetectionMode, OutputResolution, RoomRecord, RoomStore};
+use canvas_mirror_store::{
+    DetectionMode, OutputResolution, RoomRecord, RoomStore, StoredIccProfile,
+};
 use tempfile::tempdir;
 
 use crate::{CoreError, JoinRoomCommand, PublishSnapshotCommand, ServerCore, UpdateRoomCommand};
@@ -118,6 +120,65 @@ fn load_backfills_missing_viewer_tokens_in_store() {
             .map(|room| room.viewer_token)
             .expect("room should exist"),
         stored_token
+    );
+}
+
+#[test]
+fn update_room_can_set_and_clear_icc_profile() {
+    let dir = tempdir().expect("temp dir should exist");
+    let store_path = dir.path().join("config/rooms.toml");
+    let core =
+        ServerCore::load(sample_config(store_path.clone(), 30_000)).expect("core should load");
+    core.create_room(sample_room("room-a", "Room A"))
+        .expect("room should be created");
+
+    let icc_profile = StoredIccProfile {
+        name: "LG ULTRAFINE".to_string(),
+        bytes: vec![0, 1, 2, 3],
+    };
+
+    core.update_room(
+        "room-a",
+        UpdateRoomCommand {
+            icc_profile_enabled: Some(true),
+            icc_profile: Some(Some(icc_profile.clone())),
+            ..UpdateRoomCommand::default()
+        },
+    )
+    .expect("room ICC profile should be set");
+
+    let stored = RoomStore::load_from_path(&store_path).expect("store should load");
+    assert_eq!(
+        stored.room("room-a").map(|room| room.icc_profile_enabled),
+        Some(true)
+    );
+    assert_eq!(
+        stored
+            .room("room-a")
+            .and_then(|room| room.icc_profile.clone()),
+        Some(icc_profile)
+    );
+
+    core.update_room(
+        "room-a",
+        UpdateRoomCommand {
+            icc_profile_enabled: Some(false),
+            icc_profile: Some(None),
+            ..UpdateRoomCommand::default()
+        },
+    )
+    .expect("room ICC profile should be cleared");
+
+    let stored = RoomStore::load_from_path(&store_path).expect("store should load");
+    assert_eq!(
+        stored.room("room-a").map(|room| room.icc_profile_enabled),
+        Some(false)
+    );
+    assert_eq!(
+        stored
+            .room("room-a")
+            .and_then(|room| room.icc_profile.clone()),
+        None
     );
 }
 
@@ -606,5 +667,7 @@ fn sample_room(id: &str, name: &str) -> RoomRecord {
             max_width: 1440,
             max_height: 810,
         },
+        icc_profile_enabled: false,
+        icc_profile: None,
     }
 }

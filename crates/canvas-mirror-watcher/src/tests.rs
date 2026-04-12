@@ -180,5 +180,7 @@ fn sample_room(id: &str, target_path: PathBuf, mode: DetectionMode) -> RoomRecor
         debounce_ms: 10,
         stabilize_ms: 1,
         resolution: OutputResolution::Source,
+        icc_profile_enabled: false,
+        icc_profile: None,
     }
 }

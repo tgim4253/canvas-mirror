@@ -70,6 +70,8 @@ pub struct RoomSummaryDto {
     pub debounce_ms: u64,
     pub stabilize_ms: u64,
     pub resolution: OutputResolution,
+    pub icc_profile_enabled: bool,
+    pub icc_profile_name: Option<String>,
 }
 
 impl From<&RoomRecord> for RoomSummaryDto {
@@ -83,6 +85,8 @@ impl From<&RoomRecord> for RoomSummaryDto {
             debounce_ms: room.debounce_ms,
             stabilize_ms: room.stabilize_ms,
             resolution: room.resolution.clone(),
+            icc_profile_enabled: room.icc_profile_enabled,
+            icc_profile_name: room.icc_profile.as_ref().map(|icc| icc.name.clone()),
         }
     }
 }
@@ -162,6 +166,8 @@ mod tests {
 
         assert_eq!(view.room.id, "room-a");
         assert_eq!(view.room.mode, DetectionMode::Interval);
+        assert!(view.room.icc_profile_enabled);
+        assert_eq!(view.room.icc_profile_name.as_deref(), Some("LG ULTRAFINE"));
     }
 
     #[test]
@@ -267,6 +273,11 @@ mod tests {
                 max_width: 1440,
                 max_height: 810,
             },
+            icc_profile_enabled: true,
+            icc_profile: Some(canvas_mirror_store::StoredIccProfile {
+                name: "LG ULTRAFINE".to_string(),
+                bytes: vec![0, 1, 2, 3],
+            }),
         }
     }
 

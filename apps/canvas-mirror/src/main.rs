@@ -416,6 +416,8 @@ fn handle_room_command(
                     args.max_height,
                 )?
                 .expect("create resolution must exist"),
+                icc_profile_enabled: false,
+                icc_profile: None,
             };
             let room = core.create_room(room)?;
             sync_runtime_logs(&core, log_file, &mut log_cursor)?;
@@ -437,6 +439,8 @@ fn handle_room_command(
                 debounce_ms: args.debounce_ms,
                 stabilize_ms: args.stabilize_ms,
                 resolution,
+                icc_profile_enabled: None,
+                icc_profile: None,
             };
 
             if command == UpdateRoomCommand::default() {

@@ -4,6 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -37,6 +38,13 @@ impl Default for OutputResolution {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StoredIccProfile {
+    pub name: String,
+    #[serde(with = "base64_bytes")]
+    pub bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RoomRecord {
     pub id: String,
     pub name: String,
@@ -55,6 +63,10 @@ pub struct RoomRecord {
     pub stabilize_ms: u64,
     #[serde(default)]
     pub resolution: OutputResolution,
+    #[serde(default)]
+    pub icc_profile_enabled: bool,
+    #[serde(default)]
+    pub icc_profile: Option<StoredIccProfile>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -202,6 +214,28 @@ fn default_version() -> u32 {
     1
 }
 
+mod base64_bytes {
+    use base64::Engine as _;
+    use serde::{de::Error as _, Deserialize, Deserializer, Serializer};
+
+    use super::BASE64_STANDARD;
+
+    pub fn serialize<S>(bytes: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&BASE64_STANDARD.encode(bytes))
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let encoded = String::deserialize(deserializer)?;
+        BASE64_STANDARD.decode(encoded).map_err(D::Error::custom)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -247,6 +281,8 @@ mod tests {
 
         let raw = fs::read_to_string(path).expect("saved file should be readable");
         assert!(raw.contains("[[rooms]]"));
+        assert!(raw.contains("name = \"LG ULTRAFINE\""));
+        assert!(raw.contains("bytes = \"AAECAw==\""));
         assert_eq!(loaded, store);
     }
 
@@ -274,6 +310,8 @@ mod tests {
             debounce_ms: 900,
             stabilize_ms: 450,
             resolution: OutputResolution::Source,
+            icc_profile_enabled: false,
+            icc_profile: None,
         };
 
         let previous = store.upsert_room(replacement.clone());
@@ -379,6 +417,8 @@ mod tests {
                     debounce_ms: 750,
                     stabilize_ms: 300,
                     resolution: OutputResolution::Source,
+                    icc_profile_enabled: false,
+                    icc_profile: None,
                 },
                 RoomRecord {
                     id: "room-a".to_string(),
@@ -394,6 +434,8 @@ mod tests {
                         max_width: 1440,
                         max_height: 810,
                     },
+                    icc_profile_enabled: false,
+                    icc_profile: None,
                 },
             ],
         };
@@ -425,7 +467,16 @@ mod tests {
                     max_width: 1440,
                     max_height: 810,
                 },
+                icc_profile_enabled: true,
+                icc_profile: Some(sample_icc_profile()),
             }],
+        }
+    }
+
+    fn sample_icc_profile() -> StoredIccProfile {
+        StoredIccProfile {
+            name: "LG ULTRAFINE".to_string(),
+            bytes: vec![0, 1, 2, 3],
         }
     }
 }

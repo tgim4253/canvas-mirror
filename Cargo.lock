@@ -265,10 +265,12 @@ dependencies = [
  "chrono",
  "futures",
  "if-addrs",
+ "image",
  "qrcode-generator",
  "serde",
  "serde_json",
  "sha2",
+ "tempfile",
  "tokio",
  "url",
  "uuid",
@@ -300,6 +302,8 @@ version = "0.1.5"
 dependencies = [
  "canvas-mirror-store",
  "clip2preview",
+ "crc32fast",
+ "flate2",
  "image",
  "tempfile",
  "thiserror",
@@ -310,6 +314,7 @@ dependencies = [
 name = "canvas-mirror-store"
 version = "0.1.5"
 dependencies = [
+ "base64",
  "serde",
  "serde_json",
  "tempfile",

@@ -1,9 +1,11 @@
 use tauri::State;
 
 use canvas_mirror_model::ServerStatusDto;
+use canvas_mirror_store::StoredIccProfile;
 
 use crate::state::{
-    AppState, CreateRoomInput, ManagedRoomDto, ServerSettingsDto, UpdateRoomInput,
+    list_available_icc_profiles_for_app, load_icc_profile_from_path, AppState,
+    AvailableIccProfileDto, CreateRoomInput, ManagedRoomDto, ServerSettingsDto, UpdateRoomInput,
     UpdateServerSettingsInput,
 };
 
@@ -12,6 +14,17 @@ pub fn list_rooms(state: State<'_, AppState>) -> Result<Vec<ManagedRoomDto>, Str
     state
         .runtime()
         .list_rooms()
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn get_room_icc_profile(
+    state: State<'_, AppState>,
+    room_id: String,
+) -> Result<Option<StoredIccProfile>, String> {
+    state
+        .runtime()
+        .room_icc_profile(&room_id)
         .map_err(|error| error.to_string())
 }
 
@@ -36,6 +49,16 @@ pub fn update_room(
         .runtime()
         .update_room(&room_id, input)
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn load_icc_profile(path: String) -> Result<StoredIccProfile, String> {
+    load_icc_profile_from_path(path).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn list_available_icc_profiles() -> Vec<AvailableIccProfileDto> {
+    list_available_icc_profiles_for_app()
 }
 
 #[tauri::command]

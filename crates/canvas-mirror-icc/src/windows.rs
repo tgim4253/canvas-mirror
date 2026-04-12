@@ -17,7 +17,7 @@ use windows_sys::Win32::{
     UI::ColorSystem::GetICMProfileW,
 };
 
-use crate::DisplayIccProfile;
+use crate::{icc_profile_display_name, DisplayIccProfile};
 
 const DISPLAY_DRIVER: &[u16] = &[68, 73, 83, 80, 76, 65, 89, 0];
 const INITIAL_PROFILE_PATH_CAPACITY: u32 = 260;
@@ -74,7 +74,7 @@ fn display_profile_for_monitor(monitor: HMONITOR) -> Option<DisplayIccProfile> {
     }
 
     let display_id = wide_array_to_string(&monitor_info.szDevice);
-    let (display_name, is_primary) = display_name_for_device(&monitor_info.szDevice)
+    let (fallback_display_name, is_primary) = display_name_for_device(&monitor_info.szDevice)
         .map(|(name, is_primary)| (name, is_primary))
         .unwrap_or_else(|| (display_id.clone(), false));
 
@@ -93,6 +93,7 @@ fn display_profile_for_monitor(monitor: HMONITOR) -> Option<DisplayIccProfile> {
     let profile = icc_profile_for_dc(hdc);
     unsafe { DeleteDC(hdc) };
     let icc_profile = profile?;
+    let display_name = icc_profile_display_name(&icc_profile).unwrap_or(fallback_display_name);
 
     Some(DisplayIccProfile {
         display_id,

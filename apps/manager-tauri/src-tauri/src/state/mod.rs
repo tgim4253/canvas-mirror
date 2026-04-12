@@ -14,8 +14,9 @@ use canvas_mirror_host::{
     spawn_snapshot_pipeline, start_transport_server, viewer_public_urls, RuntimeLogFile,
     TransportRuntime,
 };
+use canvas_mirror_icc::list_display_icc_profiles;
 use canvas_mirror_model::{LogEntryDto, RoomDto, ServerStatusDto, SnapshotMetaDto};
-use canvas_mirror_store::{DetectionMode, OutputResolution, RoomRecord};
+use canvas_mirror_store::{DetectionMode, OutputResolution, RoomRecord, StoredIccProfile};
 use canvas_mirror_watcher::{WatcherRuntime, WatcherService};
 use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
@@ -139,6 +140,10 @@ impl StudioRuntime {
             .collect()
     }
 
+    pub fn room_icc_profile(&self, room_id: &str) -> Result<Option<StoredIccProfile>> {
+        Ok(self.core.room_record(room_id).and_then(|room| room.icc_profile))
+    }
+
     pub fn create_room(&self, input: CreateRoomInput) -> Result<ManagedRoomDto> {
         let room_id = format!("room-{}", Uuid::new_v4().simple());
         let room = RoomRecord {
@@ -152,6 +157,8 @@ impl StudioRuntime {
             debounce_ms: input.debounce_ms,
             stabilize_ms: input.stabilize_ms,
             resolution: input.resolution,
+            icc_profile_enabled: input.icc_profile_enabled,
+            icc_profile: input.icc_profile,
         };
 
         self.core
@@ -171,6 +178,8 @@ impl StudioRuntime {
             debounce_ms: Some(input.debounce_ms),
             stabilize_ms: Some(input.stabilize_ms),
             resolution: Some(input.resolution),
+            icc_profile_enabled: Some(input.icc_profile_enabled),
+            icc_profile: input.icc_profile,
         };
 
         self.core
@@ -436,6 +445,14 @@ pub struct RuntimeLogsChangedDto {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct AvailableIccProfileDto {
+    pub id: String,
+    pub display_name: String,
+    pub is_primary: bool,
+    pub profile: StoredIccProfile,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct ServerSettingsDto {
     pub bind_host: String,
     pub bind_port: u16,
@@ -453,6 +470,10 @@ pub struct CreateRoomInput {
     pub debounce_ms: u64,
     pub stabilize_ms: u64,
     pub resolution: OutputResolution,
+    #[serde(default)]
+    pub icc_profile_enabled: bool,
+    #[serde(default)]
+    pub icc_profile: Option<StoredIccProfile>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -465,6 +486,10 @@ pub struct UpdateRoomInput {
     pub debounce_ms: u64,
     pub stabilize_ms: u64,
     pub resolution: OutputResolution,
+    #[serde(default)]
+    pub icc_profile_enabled: bool,
+    #[serde(default)]
+    pub icc_profile: Option<Option<StoredIccProfile>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -473,6 +498,43 @@ pub struct UpdateServerSettingsInput {
     pub bind_port: u16,
     pub public_url: Option<String>,
     pub stale_timeout_ms: u64,
+}
+
+pub fn load_icc_profile_from_path(path: impl AsRef<Path>) -> Result<StoredIccProfile> {
+    let path = path.as_ref();
+    let bytes = fs::read(path)
+        .with_context(|| format!("failed to read ICC profile from {}", path.display()))?;
+
+    if bytes.is_empty() {
+        anyhow::bail!("ICC profile file is empty.");
+    }
+
+    let name = path
+        .file_stem()
+        .or_else(|| path.file_name())
+        .and_then(|component| component.to_str())
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .unwrap_or("Imported ICC Profile")
+        .to_string();
+
+    Ok(StoredIccProfile { name, bytes })
+}
+
+pub fn list_available_icc_profiles_for_app() -> Vec<AvailableIccProfileDto> {
+    list_display_icc_profiles()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|profile| AvailableIccProfileDto {
+            id: profile.display_id,
+            display_name: profile.display_name.clone(),
+            is_primary: profile.is_primary,
+            profile: StoredIccProfile {
+                name: profile.display_name,
+                bytes: profile.icc_profile,
+            },
+        })
+        .collect()
 }
 
 fn ensure_config_exists(config_path: &Path) -> Result<ServerConfig> {
@@ -757,6 +819,8 @@ mod tests {
                     max_width: 1_440,
                     max_height: 900,
                 },
+                icc_profile_enabled: false,
+                icc_profile: None,
             })
             .expect("room should be created");
 
@@ -784,6 +848,8 @@ mod tests {
                     debounce_ms: 900,
                     stabilize_ms: 500,
                     resolution: OutputResolution::Source,
+                    icc_profile_enabled: false,
+                    icc_profile: None,
                 },
             )
             .expect("room should be updated");
@@ -836,6 +902,8 @@ mod tests {
                 debounce_ms: 0,
                 stabilize_ms: 0,
                 resolution: OutputResolution::Source,
+                icc_profile_enabled: false,
+                icc_profile: None,
             })
             .expect("room should be created");
         let room_id = created.room.room.id.clone();
@@ -887,6 +955,8 @@ mod tests {
                 debounce_ms: 0,
                 stabilize_ms: 0,
                 resolution: OutputResolution::Source,
+                icc_profile_enabled: false,
+                icc_profile: None,
             })
             .expect("room should be created");
         let viewer_url = created
@@ -995,6 +1065,8 @@ mod tests {
                 debounce_ms: 0,
                 stabilize_ms: 0,
                 resolution: OutputResolution::Source,
+                icc_profile_enabled: false,
+                icc_profile: None,
             })
             .expect("room should be created");
 
@@ -1041,6 +1113,18 @@ mod tests {
             refreshed_viewer_url.contains("&token="),
             "viewer URL should include a room token: {refreshed_viewer_url}"
         );
+    }
+
+    #[test]
+    fn load_icc_profile_from_path_reads_bytes_and_uses_file_stem_as_name() {
+        let dir = tempdir().expect("temp dir should exist");
+        let icc_path = dir.path().join("LG ULTRAFINE.icc");
+        fs::write(&icc_path, [0_u8, 1, 2, 3]).expect("icc file should write");
+
+        let profile = load_icc_profile_from_path(&icc_path).expect("icc profile should load");
+
+        assert_eq!(profile.name, "LG ULTRAFINE");
+        assert_eq!(profile.bytes, vec![0, 1, 2, 3]);
     }
 
     fn reserve_local_port() -> u16 {

@@ -8,6 +8,8 @@ rust-version.workspace = true
 
 [dependencies]
 clip2preview.workspace = true
+crc32fast = "1"
+flate2 = "1"
 image.workspace = true
 canvas-mirror-store = { path = "../canvas-mirror-store" }
 thiserror.workspace = true

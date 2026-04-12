@@ -21,8 +21,11 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::list_rooms,
+            commands::get_room_icc_profile,
             commands::create_room,
             commands::update_room,
+            commands::load_icc_profile,
+            commands::list_available_icc_profiles,
             commands::delete_room,
             commands::set_room_running,
             commands::get_server_status,

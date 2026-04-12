@@ -193,6 +193,11 @@ pub(crate) fn validate_room(room: &RoomRecord) -> Result<(), CoreError> {
             interval_ms: room.interval_ms,
         });
     }
+    if room.icc_profile_enabled && room.icc_profile.is_none() {
+        return Err(CoreError::MissingEnabledIccProfile {
+            room_id: room.id.clone(),
+        });
+    }
     Ok(())
 }
 

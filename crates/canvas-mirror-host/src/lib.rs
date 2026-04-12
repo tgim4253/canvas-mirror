@@ -77,9 +77,14 @@ pub async fn process_room_event(
         return;
     }
 
+    let icc_profile = if room.icc_profile_enabled {
+        room.icc_profile.as_ref()
+    } else {
+        None
+    };
     let target_path = resolve_target_path(store_path, &room.target_path);
     let preview = match preview_generator
-        .generate(&target_path, &room.resolution)
+        .generate(&target_path, &room.resolution, icc_profile)
         .await
     {
         Ok(preview) => preview,
@@ -448,8 +453,13 @@ fn resolve_target_path(store_path: &Path, target_path: &Path) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
+    use std::{fs, path::Path};
+
     use super::*;
-    use canvas_mirror_store::{DetectionMode, OutputResolution};
+    use canvas_mirror_config::ServerConfig;
+    use canvas_mirror_core::ServerCore;
+    use canvas_mirror_store::{DetectionMode, OutputResolution, StoredIccProfile};
+    use tempfile::tempdir;
 
     #[test]
     fn viewer_public_urls_use_explicit_public_url_when_present() {
@@ -720,6 +730,37 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn process_room_event_hashes_final_icc_tagged_preview_bytes() {
+        let dir = tempdir().expect("temp dir should exist");
+        let store_path = dir.path().join("rooms.toml");
+        let image_path = dir.path().join("preview.png");
+        write_sample_png(&image_path, 96, 64);
+        let core = ServerCore::load(ServerConfig {
+            store_path: store_path.clone(),
+            ..ServerConfig::default()
+        })
+        .expect("core should load");
+
+        let mut room = sample_room();
+        room.target_path = image_path.clone();
+        room.icc_profile_enabled = true;
+        room.icc_profile = Some(sample_icc_profile());
+        core.create_room(room).expect("room should be created");
+
+        process_room_event(&core, &store_path, &PreviewGenerator, "room-illustration").await;
+
+        let snapshot = core
+            .snapshot("room-illustration")
+            .expect("room should exist")
+            .expect("snapshot should exist");
+        assert_eq!(
+            snapshot.meta.content_hash,
+            hash_bytes(snapshot.bytes.as_ref())
+        );
+        assert!(snapshot.bytes.windows(4).any(|window| window == b"iCCP"));
+    }
+
     fn sample_room() -> RoomRecord {
         RoomRecord {
             id: "room-illustration".to_string(),
@@ -732,7 +773,22 @@ mod tests {
             debounce_ms: 750,
             stabilize_ms: 300,
             resolution: OutputResolution::Source,
+            icc_profile_enabled: false,
+            icc_profile: None,
         }
+    }
+
+    fn sample_icc_profile() -> StoredIccProfile {
+        StoredIccProfile {
+            name: "LG ULTRAFINE".to_string(),
+            bytes: vec![0, 1, 2, 3],
+        }
+    }
+
+    fn write_sample_png(path: &Path, width: u32, height: u32) {
+        let image = image::DynamicImage::new_rgba8(width, height);
+        image.save(path).expect("sample png should save");
+        let _ = fs::metadata(path).expect("sample png should exist");
     }
 
     fn sample_interface(name: &str, ip: Ipv4Addr) -> InterfaceAddress {

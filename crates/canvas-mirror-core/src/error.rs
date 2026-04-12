@@ -18,6 +18,8 @@ pub enum CoreError {
     EmptyRoomName { room_id: String },
     #[error("room '{room_id}' must have interval_ms >= 1, got {interval_ms}")]
     InvalidIntervalMs { room_id: String, interval_ms: u64 },
+    #[error("room '{room_id}' has ICC enabled but no ICC profile is configured")]
+    MissingEnabledIccProfile { room_id: String },
     #[error("room '{room_id}' already exists")]
     RoomAlreadyExists { room_id: String },
     #[error("room '{room_id}' not found")]

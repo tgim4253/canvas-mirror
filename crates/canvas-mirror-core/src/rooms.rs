@@ -252,5 +252,11 @@ fn apply_room_update(mut room: RoomRecord, update: UpdateRoomCommand) -> RoomRec
     if let Some(resolution) = update.resolution {
         room.resolution = resolution;
     }
+    if let Some(icc_profile_enabled) = update.icc_profile_enabled {
+        room.icc_profile_enabled = icc_profile_enabled;
+    }
+    if let Some(icc_profile) = update.icc_profile {
+        room.icc_profile = icc_profile;
+    }
     room
 }

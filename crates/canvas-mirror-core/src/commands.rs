@@ -8,6 +8,8 @@ pub struct UpdateRoomCommand {
     pub debounce_ms: Option<u64>,
     pub stabilize_ms: Option<u64>,
     pub resolution: Option<canvas_mirror_store::OutputResolution>,
+    pub icc_profile_enabled: Option<bool>,
+    pub icc_profile: Option<Option<canvas_mirror_store::StoredIccProfile>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

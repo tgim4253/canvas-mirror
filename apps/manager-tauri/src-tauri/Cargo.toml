@@ -18,6 +18,7 @@ base64 = "0.22"
 canvas-mirror-config = { path = "../../../crates/canvas-mirror-config" }
 canvas-mirror-core = { path = "../../../crates/canvas-mirror-core" }
 canvas-mirror-host = { path = "../../../crates/canvas-mirror-host" }
+canvas-mirror-icc = { path = "../../../crates/canvas-mirror-icc" }
 canvas-mirror-model = { path = "../../../crates/canvas-mirror-model" }
 canvas-mirror-store = { path = "../../../crates/canvas-mirror-store" }
 canvas-mirror-watcher = { path = "../../../crates/canvas-mirror-watcher" }
