@@ -1,6 +1,6 @@
 {
   "name": "@canvas-mirror/manager-tauri",
-  "version": "0.2.6",
+  "version": "0.3.8",
   "private": true,
   "type": "module",
   "scripts": {

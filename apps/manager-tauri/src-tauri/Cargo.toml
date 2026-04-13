@@ -1,6 +1,6 @@
 [package]
 name = "canvas-mirror-studio"
-version = "0.2.6"
+version = "0.3.8"
 description = "Canvas Mirror Studio"
 authors = ["tgim4253"]
 edition = "2021"
