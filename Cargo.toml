@@ -31,7 +31,7 @@ futures = "0.3"
 if-addrs = "0.13"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 indexmap = { version = "2", features = ["serde"] }
-lcms2 = "6.1"
+lcms2 = { version = "6.1", features = ["static"] }
 mime_guess = "2"
 notify = "8"
 parking_lot = "0.12"
