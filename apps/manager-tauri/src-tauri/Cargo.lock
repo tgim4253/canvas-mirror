@@ -308,7 +308,7 @@ dependencies = [
 
 [[package]]
 name = "canvas-mirror-config"
-version = "0.2.6"
+version = "0.3.9"
 dependencies = [
  "serde",
  "serde_json",
@@ -319,7 +319,7 @@ dependencies = [
 
 [[package]]
 name = "canvas-mirror-core"
-version = "0.2.6"
+version = "0.3.9"
 dependencies = [
  "canvas-mirror-config",
  "canvas-mirror-model",
@@ -334,7 +334,7 @@ dependencies = [
 
 [[package]]
 name = "canvas-mirror-host"
-version = "0.2.6"
+version = "0.3.9"
 dependencies = [
  "axum",
  "canvas-mirror-config",
@@ -357,7 +357,7 @@ dependencies = [
 
 [[package]]
 name = "canvas-mirror-icc"
-version = "0.2.6"
+version = "0.3.9"
 dependencies = [
  "objc2",
  "raw-window-handle",
@@ -366,7 +366,7 @@ dependencies = [
 
 [[package]]
 name = "canvas-mirror-model"
-version = "0.2.6"
+version = "0.3.9"
 dependencies = [
  "canvas-mirror-store",
  "chrono",
@@ -377,7 +377,7 @@ dependencies = [
 
 [[package]]
 name = "canvas-mirror-preview"
-version = "0.2.6"
+version = "0.3.9"
 dependencies = [
  "canvas-mirror-store",
  "clip2preview",
@@ -391,7 +391,7 @@ dependencies = [
 
 [[package]]
 name = "canvas-mirror-store"
-version = "0.2.6"
+version = "0.3.9"
 dependencies = [
  "base64 0.22.1",
  "serde",
@@ -402,7 +402,7 @@ dependencies = [
 
 [[package]]
 name = "canvas-mirror-studio"
-version = "0.2.6"
+version = "0.3.9"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -432,7 +432,7 @@ dependencies = [
 
 [[package]]
 name = "canvas-mirror-watcher"
-version = "0.2.6"
+version = "0.3.9"
 dependencies = [
  "canvas-mirror-core",
  "canvas-mirror-model",
